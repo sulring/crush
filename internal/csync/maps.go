@@ -27,6 +27,28 @@ func NewMapFrom[K comparable, V any](m map[K]V) *Map[K, V] {
 	}
 }
 
+// NewMapFromSeq creates a new thread-safe map from an iter.Seq2 of key-value pairs.
+func NewMapFromSeq[k comparable, v any](seq iter.Seq2[k, v]) *Map[k, v] {
+	m := make(map[k]v)
+	seq(func(kk k, vv v) bool {
+		m[kk] = vv
+		return true
+	})
+	return NewMapFrom(m)
+}
+
+// NewLazyMap creates a new lazy-loaded map. The provided load function is
+// executed in a separate goroutine to populate the map.
+func NewLazyMap[K comparable, V any](load func() map[K]V) *Map[K, V] {
+	m := &Map[K, V]{}
+	m.mu.Lock()
+	go func() {
+		m.inner = load()
+		m.mu.Unlock()
+	}()
+	return m
+}
+
 // Set sets the value for the specified key in the map.
 func (m *Map[K, V]) Set(key K, value V) {
 	m.mu.Lock()
