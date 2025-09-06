@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -1072,7 +1073,7 @@ func (a *agent) setupEvents() {
 				tools := getTools(ctx, name, c)
 				updateMcpTools(name, tools)
 				// Update the lazy map with the new tools
-				a.mcpTools = csync.NewMapFromSeq(mcpTools.Seq2())
+				a.mcpTools = csync.NewMapFrom(maps.Collect(mcpTools.Seq2()))
 				updateMCPState(name, MCPStateConnected, nil, c, a.mcpTools.Len())
 			default:
 				continue
