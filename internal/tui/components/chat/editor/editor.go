@@ -563,7 +563,7 @@ func yoloPromptFunc(info textarea.PromptInfo) string {
 	return fmt.Sprintf("%s ", t.YoloDotsBlurred)
 }
 
-func New(app *app.App) Editor {
+func newTextArea() *textarea.Model {
 	t := styles.CurrentTheme()
 	ta := textarea.New()
 	ta.SetStyles(t.S().TextArea)
@@ -571,10 +571,14 @@ func New(app *app.App) Editor {
 	ta.CharLimit = -1
 	ta.SetVirtualCursor(false)
 	ta.Focus()
-	e := &editorCmp{
+	return ta
+}
+
+func newEditor(app *app.App) Editor {
+	e := editorCmp{
 		// TODO: remove the app instance from here
 		app:      app,
-		textarea: ta,
+		textarea: newTextArea(),
 		keyMap:   DefaultEditorKeyMap(),
 	}
 	e.setEditorPrompt()
@@ -582,5 +586,9 @@ func New(app *app.App) Editor {
 	e.randomizePlaceholders()
 	e.textarea.Placeholder = e.readyPlaceholder
 
-	return e
+	return &e
+}
+
+func New(app *app.App) Editor {
+	return newEditor(app)
 }
