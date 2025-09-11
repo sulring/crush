@@ -365,9 +365,11 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *editorCmp) setEditorPrompt() {
-	if m.app.Permissions.SkipRequests() {
-		m.textarea.SetPromptFunc(4, yoloPromptFunc)
-		return
+	if perm := m.app.Permissions; perm != nil {
+		if perm.SkipRequests() {
+			m.textarea.SetPromptFunc(4, yoloPromptFunc)
+			return
+		}
 	}
 	m.textarea.SetPromptFunc(4, normalPromptFunc)
 }
