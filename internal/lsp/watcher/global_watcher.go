@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/lsp/protocol"
 	"github.com/fsnotify/fsnotify"
 )
@@ -91,7 +92,24 @@ func (gw *global) unregister(name string) {
 // events for all files within watched directories. Multiple calls with the same workspace
 // are safe since fsnotify handles directory deduplication internally.
 func Start() error {
+	cfg := config.Get()
+	root := cfg.WorkingDir()
+
+	// Skip file watching entirely when running in home directory
+	// Home directories typically contain too many files and directories
+	// which can overwhelm the file watcher and cause "too many open files" errors
+	if root == home.Dir() {
+		slog.Info("lsp watcher: Skipping file watcher in home directory to prevent resource exhaustion", "path", root)
+		return nil
+	}
+
 	gw := instance()
+
+	// If watcher creation failed, skip file watching entirely
+	if gw.watcher == nil {
+		slog.Warn("lsp watcher: File watcher not available, file watching disabled")
+		return nil
+	}
 
 	// technically workspace root is always the same...
 	if gw.started.Load() {
@@ -99,8 +117,6 @@ func Start() error {
 		return nil
 	}
 
-	cfg := config.Get()
-	root := cfg.WorkingDir()
 	slog.Debug("lsp watcher: set workspace directory to global watcher", "path", root)
 
 	// Store the workspace root for hierarchical ignore checking
@@ -116,7 +132,9 @@ func Start() error {
 	// Multiple calls with the same directories are safe (fsnotify deduplicates)
 	err := fsext.WalkDirectories(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return err
+			// Skip directories we don't have permission to access
+			slog.Debug("lsp watcher: Skipping directory due to error", "path", path, "error", err)
+			return nil
 		}
 
 		// Add directory to watcher (fsnotify handles deduplication automatically)
@@ -137,7 +155,8 @@ func Start() error {
 // fsnotify handles deduplication internally, so we don't need to track watched directories.
 func (gw *global) addDirectoryToWatcher(dirPath string) error {
 	if gw.watcher == nil {
-		return fmt.Errorf("lsp watcher: global watcher not initialized")
+		// File watching is disabled, skip silently
+		return nil
 	}
 
 	// Add directory to fsnotify watcher - fsnotify handles deduplication
@@ -160,7 +179,7 @@ func (gw *global) processEvents() {
 	cfg := config.Get()
 
 	if gw.watcher == nil || !gw.started.Load() {
-		slog.Error("lsp watcher: Global watcher not initialized")
+		slog.Debug("lsp watcher: Global watcher not available or not started")
 		return
 	}
 
