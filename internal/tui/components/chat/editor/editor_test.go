@@ -71,14 +71,14 @@ func assertBatchContainsExactMessage(t *testing.T, batchMsg tea.BatchMsg, expect
 
 // assertBatchContainsOpenCompletionsMsg checks if a BatchMsg contains an OpenCompletionsMsg
 // with the expected completions. If expectedCompletions is nil, only the message type is checked.
-func assertBatchContainsOpenCompletionsMsg(t *testing.T, batchMsg tea.BatchMsg, expectedCompletions []string) bool {
+func assertBatchContainsOpenCompletionsMsg(t *testing.T, batchMsg tea.BatchMsg, expectedCompletions []string) (*completions.OpenCompletionsMsg, bool) {
 	t.Helper()
 	messages := executeBatchCommands(batchMsg)
 
 	for _, msg := range messages {
 		if actual, ok := msg.(completions.OpenCompletionsMsg); ok {
 			if expectedCompletions == nil {
-				return true
+				return &actual, true
 			}
 
 			// Convert actual completions to string titles for comparison
@@ -94,10 +94,10 @@ func assertBatchContainsOpenCompletionsMsg(t *testing.T, batchMsg tea.BatchMsg, 
 
 			// For now, just check that we have the same count
 			// A more sophisticated implementation would check the actual values
-			return true
+			return &actual, true
 		}
 	}
-	return false
+	return nil, false
 }
 
 func mockDirLister(paths []string) fsext.DirectoryListerResolver {
@@ -165,13 +165,18 @@ func TestEditorAutocompletionFilteringOpens(t *testing.T) {
 	
 	// Execute the command and check if it returns a BatchMsg
 	msg := cmds()
+	var openCompletionsMsg *completions.OpenCompletionsMsg
 	if batchMsg, ok := msg.(tea.BatchMsg); ok {
 		// Use our enhanced helper to check for OpenCompletionsMsg with specific completions
-		found := assertBatchContainsOpenCompletionsMsg(t, batchMsg, []string{"file1.txt", "file2.txt"})
+		var found bool
+		openCompletionsMsg, found = assertBatchContainsOpenCompletionsMsg(t, batchMsg, []string{"file1.txt", "file2.txt"})
 		assert.True(t, found, "Expected to find OpenCompletionsMsg with specific completions in batched messages")
 	} else {
 		t.Fatal("Expected BatchMsg from cmds()")
 	}
+
+	assert.NotNil(t, openCompletionsMsg)
+	m, _ = testEditor.Update(openCompletionsMsg)
 
 	// Verify completions menu is open
 	assert.True(t, testEditor.isCompletionsOpen)
@@ -188,7 +193,6 @@ func TestEditorAutocompletionFilteringOpens(t *testing.T) {
 
 	m, cmds = testEditor.Update(keyPressMsg)
 	testEditor = m.(*editorCmp)
-	cmds()
 
 	// Verify the editor still has completions open
 	assert.True(t, testEditor.isCompletionsOpen)
@@ -226,7 +230,8 @@ func TestHelperFunctions(t *testing.T) {
 		assert.True(t, foundExact, "Expected to find exact OpenCompletionsMsg in batched messages")
 
 		// Test specific completions helper
-		foundSpecific := assertBatchContainsOpenCompletionsMsg(t, batchMsg, nil) // Just check type
+		msg, foundSpecific := assertBatchContainsOpenCompletionsMsg(t, batchMsg, nil) // Just check type
+		assert.NotNil(t, msg)
 		assert.True(t, foundSpecific, "Expected to find OpenCompletionsMsg in batched messages")
 	} else {
 		t.Fatal("Expected BatchMsg from cmds()")
