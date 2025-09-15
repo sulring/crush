@@ -63,6 +63,9 @@ type editorCmp struct {
 
 	keyMap EditorKeyMap
 
+	// injected file dir lister
+	listDirResolver fsext.DirectoryListerResolver
+
 	// File path completions
 	currentQuery          string
 	completionsStartIndex int
@@ -524,7 +527,7 @@ func (m *editorCmp) SetPosition(x, y int) tea.Cmd {
 }
 
 func (m *editorCmp) startCompletions() tea.Msg {
-	files, _, _ := fsext.ListDirectory(".", nil, 0)
+	files, _, _ := m.listDirResolver()(".", nil, 0)
 	slices.Sort(files)
 	completionItems := make([]completions.Completion, 0, len(files))
 	for _, file := range files {
@@ -618,12 +621,13 @@ func newTextArea() *textarea.Model {
 	return ta
 }
 
-func newEditor(app *app.App) *editorCmp {
+func newEditor(app *app.App, resolveDirLister fsext.DirectoryListerResolver) *editorCmp {
 	e := editorCmp{
 		// TODO: remove the app instance from here
 		app:      app,
 		textarea: newTextArea(),
 		keyMap:   DefaultEditorKeyMap(),
+		listDirResolver: resolveDirLister,
 	}
 	e.setEditorPrompt()
 
@@ -634,5 +638,5 @@ func newEditor(app *app.App) *editorCmp {
 }
 
 func New(app *app.App) Editor {
-	return newEditor(app)
+	return newEditor(app, fsext.ResolveDirectoryLister)
 }
