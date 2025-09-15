@@ -234,6 +234,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isCompletionsOpen = false
 		m.currentQuery = ""
 		m.completionsStartIndex = 0
+	// NOTE(tauraamui) [15/09/2025]: this is the correct location to add picture attaching
 	case completions.SelectCompletionMsg:
 		if !m.isCompletionsOpen {
 			return m, nil
