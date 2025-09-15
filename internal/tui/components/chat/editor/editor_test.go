@@ -164,42 +164,6 @@ func TestEditorAutocompletion_StartFilteringOpens(t *testing.T) {
 	testEditor = m.(*editorCmp)
 	
 	msg := cmds()
-	assert.NotNil(t, msg)
-	m, cmds = testEditor.Update(msg)
-
-	// Now simulate typing a query to filter the completions
-	// Set the text to "/tes" and then simulate typing "t" to make "/test"
-	testEditor.textarea.SetValue("/tes")
-
-	// Simulate typing a key that would trigger filtering
-	keyPressMsg = tea.KeyPressMsg{
-		Text: "t",
-	}
-
-	m, cmds = testEditor.Update(keyPressMsg)
-	testEditor = m.(*editorCmp)
-
-	// The currentQuery should be updated based on what we typed
-	// In this case, it would be "test" (the word after the initial '/')
-	// Note: The actual filtering is handled by the completions component,
-	// so we're just verifying the editor's state is correct
-	assert.Equal(t, "test", testEditor.currentQuery)
-}
-
-func TestEditorAutocompletion_SelectionOfNormalPathAddsToTextAreaClosesCompletion(t *testing.T) {
-	testEditor := newEditor(&app.App{}, mockDirLister([]string{"file1.txt", "file2.txt"}))
-	require.NotNil(t, testEditor)
-
-	// open the completions menu by simulating a '/' key press
-	testEditor.Focus()
-	keyPressMsg := tea.KeyPressMsg{
-		Text: "/",
-	}
-
-	m, cmds := testEditor.Update(keyPressMsg)
-	testEditor = m.(*editorCmp)
-	
-	msg := cmds()
 	var openCompletionsMsg *completions.OpenCompletionsMsg
 	if batchMsg, ok := msg.(tea.BatchMsg); ok {
 		// Use our enhanced helper to check for OpenCompletionsMsg with specific completions
@@ -237,6 +201,42 @@ func TestEditorAutocompletion_SelectionOfNormalPathAddsToTextAreaClosesCompletio
 
 	// Verify the editor still has completions open
 	assert.True(t, testEditor.isCompletionsOpen)
+
+	// The currentQuery should be updated based on what we typed
+	// In this case, it would be "test" (the word after the initial '/')
+	// Note: The actual filtering is handled by the completions component,
+	// so we're just verifying the editor's state is correct
+	assert.Equal(t, "test", testEditor.currentQuery)
+}
+
+func TestEditorAutocompletion_SelectionOfNormalPathAddsToTextAreaClosesCompletion(t *testing.T) {
+	testEditor := newEditor(&app.App{}, mockDirLister([]string{"file1.txt", "file2.txt"}))
+	require.NotNil(t, testEditor)
+
+	// open the completions menu by simulating a '/' key press
+	testEditor.Focus()
+	keyPressMsg := tea.KeyPressMsg{
+		Text: "/",
+	}
+
+	m, cmds := testEditor.Update(keyPressMsg)
+	testEditor = m.(*editorCmp)
+	
+	msg := cmds()
+	assert.NotNil(t, msg)
+	m, cmds = testEditor.Update(msg)
+
+	// Now simulate typing a query to filter the completions
+	// Set the text to "/tes" and then simulate typing "t" to make "/test"
+	testEditor.textarea.SetValue("/tes")
+
+	// Simulate typing a key that would trigger filtering
+	keyPressMsg = tea.KeyPressMsg{
+		Text: "t",
+	}
+
+	m, cmds = testEditor.Update(keyPressMsg)
+	testEditor = m.(*editorCmp)
 
 	// The currentQuery should be updated based on what we typed
 	// In this case, it would be "test" (the word after the initial '/')
