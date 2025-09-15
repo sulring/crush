@@ -176,6 +176,9 @@ func TestEditorAutocompletion_StartFilteringOpens(t *testing.T) {
 
 	assert.NotNil(t, openCompletionsMsg)
 	m, cmds = testEditor.Update(openCompletionsMsg)
+	if 
+	msg = cmds()
+	testEditor = m.(*editorCmp)
 
 	if batchMsg, ok := msg.(tea.BatchMsg); ok {
 		assertBatchContainsExactMessage(t, batchMsg, completions.CompletionsOpenedMsg{})
@@ -197,6 +200,7 @@ func TestEditorAutocompletion_StartFilteringOpens(t *testing.T) {
 	}
 
 	m, cmds = testEditor.Update(keyPressMsg)
+	msg = cmds()
 	testEditor = m.(*editorCmp)
 
 	// Verify the editor still has completions open
@@ -207,10 +211,30 @@ func TestEditorAutocompletion_StartFilteringOpens(t *testing.T) {
 	// Note: The actual filtering is handled by the completions component,
 	// so we're just verifying the editor's state is correct
 	assert.Equal(t, "test", testEditor.currentQuery)
+
+	keyPressMsg = tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	}
+
+	m, cmds = testEditor.Update(keyPressMsg)
+	msg = cmds()
+	testEditor = m.(*editorCmp)
+
+	if batchMsg, ok := msg.(tea.BatchMsg); ok {
+		assertBatchContainsExactMessage(t, batchMsg, completions.CompletionsOpenedMsg{})
+	} else {
+		t.Fatal("Expected BatchMsg from cmds()")
+	}
+
+	m, cmds = testEditor.Update(msg)
+	msg = cmds()
+	testEditor = m.(*editorCmp)
+	// Verify the editor still has completions open
+	assert.True(t, testEditor.isCompletionsOpen)
 }
 
 func TestEditorAutocompletion_SelectionOfNormalPathAddsToTextAreaClosesCompletion(t *testing.T) {
-	testEditor := newEditor(&app.App{}, mockDirLister([]string{"file1.txt", "file2.txt"}))
+	testEditor := newEditor(&app.App{}, mockDirLister([]string{"example_test.go", "file1.txt", "file2.txt"}))
 	require.NotNil(t, testEditor)
 
 	// open the completions menu by simulating a '/' key press
