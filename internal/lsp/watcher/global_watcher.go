@@ -386,6 +386,9 @@ func setupIgnoreSystem(root string) error {
 			slog.Warn("lsp watcher: Failed to load .gitignore file", "error", err)
 		}
 	}
+	for _, p := range fsext.IgnorePatters {
+		im.AddPattern(p)
+	}
 
 	// Set as the global ignore matcher
 	notify.SetIgnoreMatcher(im)

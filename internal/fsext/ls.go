@@ -13,64 +13,66 @@ import (
 	ignore "github.com/sabhiram/go-gitignore"
 )
 
+var IgnorePatters = []string{
+	// Version control
+	".git",
+	".svn",
+	".hg",
+	".bzr",
+
+	// IDE and editor files
+	".vscode",
+	".idea",
+	"*.swp",
+	"*.swo",
+	"*~",
+	".DS_Store",
+	"Thumbs.db",
+
+	// Build artifacts and dependencies
+	"node_modules",
+	"target",
+	"build",
+	"dist",
+	"out",
+	"bin",
+	"obj",
+	"*.o",
+	"*.so",
+	"*.dylib",
+	"*.dll",
+	"*.exe",
+
+	// Logs and temporary files
+	"*.log",
+	"*.tmp",
+	"*.temp",
+	".cache",
+	".tmp",
+
+	// Language-specific
+	"__pycache__",
+	"*.pyc",
+	"*.pyo",
+	".pytest_cache",
+	"vendor",
+	"Cargo.lock",
+	"package-lock.json",
+	"yarn.lock",
+	"pnpm-lock.yaml",
+
+	// OS generated files
+	".Trash",
+	".Spotlight-V100",
+	".fseventsd",
+
+	// Crush
+	".crush",
+}
+
 // commonIgnorePatterns contains commonly ignored files and directories
 var commonIgnorePatterns = sync.OnceValue(func() ignore.IgnoreParser {
-	return ignore.CompileIgnoreLines(
-		// Version control
-		".git",
-		".svn",
-		".hg",
-		".bzr",
-
-		// IDE and editor files
-		".vscode",
-		".idea",
-		"*.swp",
-		"*.swo",
-		"*~",
-		".DS_Store",
-		"Thumbs.db",
-
-		// Build artifacts and dependencies
-		"node_modules",
-		"target",
-		"build",
-		"dist",
-		"out",
-		"bin",
-		"obj",
-		"*.o",
-		"*.so",
-		"*.dylib",
-		"*.dll",
-		"*.exe",
-
-		// Logs and temporary files
-		"*.log",
-		"*.tmp",
-		"*.temp",
-		".cache",
-		".tmp",
-
-		// Language-specific
-		"__pycache__",
-		"*.pyc",
-		"*.pyo",
-		".pytest_cache",
-		"vendor",
-		"Cargo.lock",
-		"package-lock.json",
-		"yarn.lock",
-		"pnpm-lock.yaml",
-
-		// OS generated files
-		".Trash",
-		".Spotlight-V100",
-		".fseventsd",
-
-		// Crush
-		".crush",
-	)
+	return ignore.CompileIgnoreLines(IgnorePatters...)
 })
 
 var homeIgnore = sync.OnceValue(func() ignore.IgnoreParser {
