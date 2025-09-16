@@ -175,52 +175,6 @@ func (m *editorCmp) repositionCompletions() tea.Msg {
 	return completions.RepositionCompletionsMsg{X: x, Y: y}
 }
 
-// NOTE(tauraamui) [12/09/2025]: I want to use this shared logic to denote an attachment event
-func handleSelectedPath(path string) {
-	/*
-		path = strings.ReplaceAll(string(path), "\\ ", " ")
-		// try to get an image
-		path, err := filepath.Abs(strings.TrimSpace(path))
-		if err != nil {
-			m.textarea, cmd = m.textarea.Update(msg)
-			return m, cmd
-		}
-		isAllowedType := false
-		for _, ext := range filepicker.AllowedTypes {
-			if strings.HasSuffix(path, ext) {
-				isAllowedType = true
-				break
-			}
-		}
-		if !isAllowedType {
-			m.textarea, cmd = m.textarea.Update(msg)
-			return m, cmd
-		}
-		tooBig, _ := filepicker.IsFileTooBig(path, filepicker.MaxAttachmentSize)
-		if tooBig {
-			m.textarea, cmd = m.textarea.Update(msg)
-			return m, cmd
-		}
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			m.textarea, cmd = m.textarea.Update(msg)
-			return m, cmd
-		}
-		mimeBufferSize := min(512, len(content))
-		mimeType := http.DetectContentType(content[:mimeBufferSize])
-		fileName := filepath.Base(path)
-		attachment := message.Attachment{FilePath: path, FileName: fileName, MimeType: mimeType, Content: content}
-		return m, util.CmdHandler(filepicker.FilePickedMsg{
-			Attachment: attachment,
-		})
-	*/
-}
-
-func attachPicture() {
-
-}
-
 func onCompletionItemSelect(msg completions.SelectCompletionMsg, m *editorCmp) {
 	if item, ok := msg.Value.(FileCompletionItem); ok {
 		word := m.textarea.Word()
