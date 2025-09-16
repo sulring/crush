@@ -216,6 +216,69 @@ func handleSelectedPath(path string) {
 	*/
 }
 
+func attachPicture() {
+
+}
+
+func onCompletionItemSelect(msg completions.SelectCompletionMsg, m *editorCmp) {
+	if item, ok := msg.Value.(FileCompletionItem); ok {
+		word := m.textarea.Word()
+		// If the selected item is a file, insert its path into the textarea
+		value := m.textarea.Value()
+		value = value[:m.completionsStartIndex] + // Remove the current query
+			item.Path + // Insert the file path
+			value[m.completionsStartIndex+len(word):] // Append the rest of the value
+		// XXX: This will always move the cursor to the end of the textarea.
+		m.textarea.SetValue(value)
+		m.textarea.MoveToEnd()
+		if !msg.Insert {
+			m.isCompletionsOpen = false
+			m.currentQuery = ""
+			m.completionsStartIndex = 0
+		}
+	}
+}
+
+func onPaste(msg tea.PasteMsg, m *editorCmp) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	path := strings.ReplaceAll(string(msg), "\\ ", " ")
+	// try to get an image
+	path, err := filepath.Abs(strings.TrimSpace(path))
+	if err != nil {
+		m.textarea, cmd = m.textarea.Update(msg)
+		return m, cmd
+	}
+	isAllowedType := false
+	for _, ext := range filepicker.AllowedTypes {
+		if strings.HasSuffix(path, ext) {
+			isAllowedType = true
+			break
+		}
+	}
+	if !isAllowedType {
+		m.textarea, cmd = m.textarea.Update(msg)
+		return m, cmd
+	}
+	tooBig, _ := filepicker.IsFileTooBig(path, filepicker.MaxAttachmentSize)
+	if tooBig {
+		m.textarea, cmd = m.textarea.Update(msg)
+		return m, cmd
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		m.textarea, cmd = m.textarea.Update(msg)
+		return m, cmd
+	}
+	mimeBufferSize := min(512, len(content))
+	mimeType := http.DetectContentType(content[:mimeBufferSize])
+	fileName := filepath.Base(path)
+	attachment := message.Attachment{FilePath: path, FileName: fileName, MimeType: mimeType, Content: content}
+	return m, util.CmdHandler(filepicker.FilePickedMsg{
+		Attachment: attachment,
+	})
+}
+
 func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
@@ -239,23 +302,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.isCompletionsOpen {
 			return m, nil
 		}
-		if item, ok := msg.Value.(FileCompletionItem); ok {
-			word := m.textarea.Word()
-			// If the selected item is a file, insert its path into the textarea
-			value := m.textarea.Value()
-			value = value[:m.completionsStartIndex] + // Remove the current query
-				item.Path + // Insert the file path
-				value[m.completionsStartIndex+len(word):] // Append the rest of the value
-			// XXX: This will always move the cursor to the end of the textarea.
-			m.textarea.SetValue(value)
-			m.textarea.MoveToEnd()
-			if !msg.Insert {
-				m.isCompletionsOpen = false
-				m.currentQuery = ""
-				m.completionsStartIndex = 0
-			}
-		}
-
+		onCompletionItemSelect(msg, m)
 	case commands.OpenExternalEditorMsg:
 		if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
 			return m, util.ReportWarn("Agent is working, please wait...")
@@ -265,43 +312,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetValue(msg.Text)
 		m.textarea.MoveToEnd()
 	case tea.PasteMsg:
-		path := strings.ReplaceAll(string(msg), "\\ ", " ")
-		// try to get an image
-		path, err := filepath.Abs(strings.TrimSpace(path))
-		if err != nil {
-			m.textarea, cmd = m.textarea.Update(msg)
-			return m, cmd
-		}
-		isAllowedType := false
-		for _, ext := range filepicker.AllowedTypes {
-			if strings.HasSuffix(path, ext) {
-				isAllowedType = true
-				break
-			}
-		}
-		if !isAllowedType {
-			m.textarea, cmd = m.textarea.Update(msg)
-			return m, cmd
-		}
-		tooBig, _ := filepicker.IsFileTooBig(path, filepicker.MaxAttachmentSize)
-		if tooBig {
-			m.textarea, cmd = m.textarea.Update(msg)
-			return m, cmd
-		}
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			m.textarea, cmd = m.textarea.Update(msg)
-			return m, cmd
-		}
-		mimeBufferSize := min(512, len(content))
-		mimeType := http.DetectContentType(content[:mimeBufferSize])
-		fileName := filepath.Base(path)
-		attachment := message.Attachment{FilePath: path, FileName: fileName, MimeType: mimeType, Content: content}
-		return m, util.CmdHandler(filepicker.FilePickedMsg{
-			Attachment: attachment,
-		})
-
+		return onPaste(msg, m)
 	case commands.ToggleYoloModeMsg:
 		m.setEditorPrompt()
 		return m, nil
