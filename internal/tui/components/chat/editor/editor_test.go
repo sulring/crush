@@ -111,6 +111,26 @@ func mockDirLister(paths []string) fsext.DirectoryListerResolver {
 	}
 }
 
+type noopEvent struct{}
+
+type updater interface {
+	Update(msg tea.Msg) (tea.Model, tea.Cmd)
+}
+
+func simulateUpdate(up updater, msg tea.Msg) (updater, tea.Msg) {
+	up, cmd := up.Update(msg)
+	if cmd != nil {
+		return up, cmd()
+	}
+	return up, noopEvent{}
+}
+
+var pngMagicNumberData = []byte("\x89PNG\x0D\x0A\x1A\x0A")
+
+func mockResolveAbs(path string) (string, error) {
+	return path, nil
+}
+
 func TestEditorTypingForwardSlashOpensCompletions(t *testing.T) {
 	testEditor := newEditor(&app.App{}, mockDirLister([]string{}))
 	require.NotNil(t, testEditor)
@@ -153,8 +173,9 @@ func TestEditorAutocompletionWithEmptyInput(t *testing.T) {
 	assert.Equal(t, "", testEditor.currentQuery)
 }
 
-func TestEditorAutoCompletion_WIP(t *testing.T) {
-	testEditor := newEditor(&app.App{}, mockDirLister([]string{"file1.txt", "file2.txt"}))
+func TestEditorAutoCompletion_OnNonImageFileFullPathInsertedFromQuery(t *testing.T) {
+	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
+	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
 	require.NotNil(t, testEditor)
 
 	// open the completions menu by simulating a '/' key press
@@ -170,33 +191,39 @@ func TestEditorAutoCompletion_WIP(t *testing.T) {
 	if batchMsg, ok := msg.(tea.BatchMsg); ok {
 		// Use our enhanced helper to check for OpenCompletionsMsg with specific completions
 		var found bool
-		openCompletionsMsg, found = assertBatchContainsOpenCompletionsMsg(t, batchMsg, []string{"file1.txt", "file2.txt"})
+		openCompletionsMsg, found = assertBatchContainsOpenCompletionsMsg(t, batchMsg, []string{"image.png", "random.txt"})
 		assert.True(t, found, "Expected to find OpenCompletionsMsg with specific completions in batched messages")
 	} else {
 		t.Fatal("Expected BatchMsg from cmds()")
 	}
 
 	assert.NotNil(t, openCompletionsMsg)
-}
+	require.True(t, testEditor.IsCompletionsOpen())
 
-type noopEvent struct{}
+	testEditor.textarea.SetValue("/random.tx")
 
-type updater interface {
-	Update(msg tea.Msg) (tea.Model, tea.Cmd)
-}
-
-func simulateUpdate(up updater, msg tea.Msg) (updater, tea.Msg) {
-	up, cmd := up.Update(msg)
-	if cmd != nil {
-		return up, cmd()
+	keyPressMsg = tea.KeyPressMsg{
+		Text: "t",
 	}
-	return up, noopEvent{}
-}
+	m, msg = simulateUpdate(testEditor, keyPressMsg)
+	testEditor = m.(*editorCmp)
 
-var pngMagicNumberData = []byte("\x89PNG\x0D\x0A\x1A\x0A")
 
-func mockResolveAbs(path string) (string, error) {
-	return path, nil
+	selectMsg := completions.SelectCompletionMsg{
+		Value: FileCompletionItem{
+			"./root/project/random.txt",
+		},
+		Insert: true,
+	}
+
+	m, msg = simulateUpdate(testEditor, selectMsg)
+	testEditor = m.(*editorCmp)
+
+	if _, ok := msg.(noopEvent); !ok {
+		t.Fatal("Expected noopEvent from cmds()")
+	}
+
+	assert.Equal(t, "./root/project/random.txt", testEditor.textarea.Value())
 }
 
 func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
@@ -226,7 +253,7 @@ func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 		FilePath: "image.png",
 		FileName: "image.png",
 		MimeType: "image/png",
-		Content: pngMagicNumberData,
+		Content:  pngMagicNumberData,
 	}, attachmentMsg)
 }
 
@@ -245,127 +272,6 @@ func TestEditor_OnPastePathToNonImageEmitsAttachFileMessage(t *testing.T) {
 	testEditor = model.(*editorCmp)
 
 	assert.Nil(t, cmd)
-}
-
-/*
-func TestEditorAutocompletion_StartFilteringOpens(t *testing.T) {
-	testEditor := newEditor(&app.App{}, mockDirLister([]string{"file1.txt", "file2.txt"}))
-	require.NotNil(t, testEditor)
-
-	// open the completions menu by simulating a '/' key press
-	testEditor.Focus()
-	keyPressMsg := tea.KeyPressMsg{
-		Text: "/",
-	}
-
-	m, cmds := testEditor.Update(keyPressMsg)
-	testEditor = m.(*editorCmp)
-
-	msg := cmds()
-	var openCompletionsMsg *completions.OpenCompletionsMsg
-	if batchMsg, ok := msg.(tea.BatchMsg); ok {
-		// Use our enhanced helper to check for OpenCompletionsMsg with specific completions
-		var found bool
-		openCompletionsMsg, found = assertBatchContainsOpenCompletionsMsg(t, batchMsg, []string{"file1.txt", "file2.txt"})
-		assert.True(t, found, "Expected to find OpenCompletionsMsg with specific completions in batched messages")
-	} else {
-		t.Fatal("Expected BatchMsg from cmds()")
-	}
-
-	assert.NotNil(t, openCompletionsMsg)
-	m, cmds = testEditor.Update(openCompletionsMsg)
-
-	msg = cmds()
-	testEditor = m.(*editorCmp)
-
-	if batchMsg, ok := msg.(tea.BatchMsg); ok {
-		assertBatchContainsExactMessage(t, batchMsg, completions.CompletionsOpenedMsg{})
-	} else {
-		t.Fatal("Expected BatchMsg from cmds()")
-	}
-
-	// Verify completions menu is open
-	assert.True(t, testEditor.isCompletionsOpen)
-	assert.Equal(t, "/", testEditor.textarea.Value())
-
-	// Now simulate typing a query to filter the completions
-	// Set the text to "/tes" and then simulate typing "t" to make "/test"
-	testEditor.textarea.SetValue("/tes")
-
-	// Simulate typing a key that would trigger filtering
-	keyPressMsg = tea.KeyPressMsg{
-		Text: "t",
-	}
-
-	m, cmds = testEditor.Update(keyPressMsg)
-	msg = cmds()
-	testEditor = m.(*editorCmp)
-
-	// Verify the editor still has completions open
-	assert.True(t, testEditor.isCompletionsOpen)
-
-	// The currentQuery should be updated based on what we typed
-	// In this case, it would be "test" (the word after the initial '/')
-	// Note: The actual filtering is handled by the completions component,
-	// so we're just verifying the editor's state is correct
-	assert.Equal(t, "test", testEditor.currentQuery)
-
-	keyPressMsg = tea.KeyPressMsg{
-		Code: tea.KeyEnter,
-	}
-
-	m, cmds = testEditor.Update(keyPressMsg)
-	msg = cmds()
-	testEditor = m.(*editorCmp)
-
-	if batchMsg, ok := msg.(tea.BatchMsg); ok {
-		assertBatchContainsExactMessage(t, batchMsg, completions.CompletionsOpenedMsg{})
-	} else {
-		t.Fatal("Expected BatchMsg from cmds()")
-	}
-
-	m, cmds = testEditor.Update(msg)
-	msg = cmds()
-	testEditor = m.(*editorCmp)
-	// Verify the editor still has completions open
-	assert.True(t, testEditor.isCompletionsOpen)
-}
-*/
-
-func TestEditorAutocompletion_SelectionOfNormalPathAddsToTextAreaClosesCompletion(t *testing.T) {
-	testEditor := newEditor(&app.App{}, mockDirLister([]string{"example_test.go", "file1.txt", "file2.txt"}))
-	require.NotNil(t, testEditor)
-
-	// open the completions menu by simulating a '/' key press
-	testEditor.Focus()
-	keyPressMsg := tea.KeyPressMsg{
-		Text: "/",
-	}
-
-	m, cmds := testEditor.Update(keyPressMsg)
-	testEditor = m.(*editorCmp)
-
-	msg := cmds()
-	assert.NotNil(t, msg)
-	m, cmds = testEditor.Update(msg)
-
-	// Now simulate typing a query to filter the completions
-	// Set the text to "/tes" and then simulate typing "t" to make "/test"
-	testEditor.textarea.SetValue("/tes")
-
-	// Simulate typing a key that would trigger filtering
-	keyPressMsg = tea.KeyPressMsg{
-		Text: "t",
-	}
-
-	m, cmds = testEditor.Update(keyPressMsg)
-	testEditor = m.(*editorCmp)
-
-	// The currentQuery should be updated based on what we typed
-	// In this case, it would be "test" (the word after the initial '/')
-	// Note: The actual filtering is handled by the completions component,
-	// so we're just verifying the editor's state is correct
-	assert.Equal(t, "test", testEditor.currentQuery)
 }
 
 // TestHelperFunctions demonstrates how to use the batch message helpers
