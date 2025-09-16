@@ -2,11 +2,14 @@ package editor
 
 import (
 	"testing"
+	"testing/fstest"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/tui/components/completions"
+	"github.com/charmbracelet/crush/internal/tui/components/dialogs/filepicker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -190,6 +193,42 @@ func simulateUpdate(up updater, msg tea.Msg) (updater, tea.Msg) {
 	return up, noopEvent{}
 }
 
+var pngMagicNumberData = []byte("\x89PNG\x0D\x0A\x1A\x0A")
+
+func TestEditor_OnPasteEmitsAttachFileMessage(t *testing.T) {
+	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
+	fsys := fstest.MapFS{
+		"image.png": {
+			Data: pngMagicNumberData,
+		},
+		"random.txt": {
+			Data: []byte("Some content"),
+		},
+	}
+	resolveAbs := func(path string) (string, error) {
+		return path, nil
+	}
+	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
+	model, cmd := onPaste(fsys, resolveAbs, testEditor, tea.PasteMsg("image.png"))
+	testEditor = model.(*editorCmp)
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	assert.NotNil(t, msg)
+
+	var attachmentMsg message.Attachment
+	if fpickedMsg, ok := msg.(filepicker.FilePickedMsg); ok {
+		attachmentMsg = fpickedMsg.Attachment
+	}
+
+	assert.Equal(t, message.Attachment{
+		FilePath: "image.png",
+		FileName: "image.png",
+		MimeType: "image/png",
+		Content: pngMagicNumberData,
+	}, attachmentMsg)
+}
+
 /*
 func TestEditorAutocompletion_StartFilteringOpens(t *testing.T) {
 	testEditor := newEditor(&app.App{}, mockDirLister([]string{"file1.txt", "file2.txt"}))
@@ -203,7 +242,7 @@ func TestEditorAutocompletion_StartFilteringOpens(t *testing.T) {
 
 	m, cmds := testEditor.Update(keyPressMsg)
 	testEditor = m.(*editorCmp)
-	
+
 	msg := cmds()
 	var openCompletionsMsg *completions.OpenCompletionsMsg
 	if batchMsg, ok := msg.(tea.BatchMsg); ok {
@@ -217,7 +256,7 @@ func TestEditorAutocompletion_StartFilteringOpens(t *testing.T) {
 
 	assert.NotNil(t, openCompletionsMsg)
 	m, cmds = testEditor.Update(openCompletionsMsg)
- 
+
 	msg = cmds()
 	testEditor = m.(*editorCmp)
 
@@ -287,7 +326,7 @@ func TestEditorAutocompletion_SelectionOfNormalPathAddsToTextAreaClosesCompletio
 
 	m, cmds := testEditor.Update(keyPressMsg)
 	testEditor = m.(*editorCmp)
-	
+
 	msg := cmds()
 	assert.NotNil(t, msg)
 	m, cmds = testEditor.Update(msg)
