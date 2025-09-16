@@ -195,7 +195,11 @@ func simulateUpdate(up updater, msg tea.Msg) (updater, tea.Msg) {
 
 var pngMagicNumberData = []byte("\x89PNG\x0D\x0A\x1A\x0A")
 
-func TestEditor_OnPasteEmitsAttachFileMessage(t *testing.T) {
+func mockResolveAbs(path string) (string, error) {
+	return path, nil
+}
+
+func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
 	fsys := fstest.MapFS{
 		"image.png": {
@@ -205,11 +209,8 @@ func TestEditor_OnPasteEmitsAttachFileMessage(t *testing.T) {
 			Data: []byte("Some content"),
 		},
 	}
-	resolveAbs := func(path string) (string, error) {
-		return path, nil
-	}
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	model, cmd := onPaste(fsys, resolveAbs, testEditor, tea.PasteMsg("image.png"))
+	model, cmd := onPaste(fsys, mockResolveAbs, testEditor, tea.PasteMsg("image.png"))
 	testEditor = model.(*editorCmp)
 
 	require.NotNil(t, cmd)
@@ -227,6 +228,23 @@ func TestEditor_OnPasteEmitsAttachFileMessage(t *testing.T) {
 		MimeType: "image/png",
 		Content: pngMagicNumberData,
 	}, attachmentMsg)
+}
+
+func TestEditor_OnPastePathToNonImageEmitsAttachFileMessage(t *testing.T) {
+	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
+	fsys := fstest.MapFS{
+		"image.png": {
+			Data: pngMagicNumberData,
+		},
+		"random.txt": {
+			Data: []byte("Some content"),
+		},
+	}
+	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
+	model, cmd := onPaste(fsys, mockResolveAbs, testEditor, tea.PasteMsg("random.txt"))
+	testEditor = model.(*editorCmp)
+
+	assert.Nil(t, cmd)
 }
 
 /*
