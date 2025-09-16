@@ -3,6 +3,7 @@ package editor
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"net/http"
 	"os"
@@ -239,11 +240,15 @@ func onCompletionItemSelect(msg completions.SelectCompletionMsg, m *editorCmp) {
 	}
 }
 
-func onPaste(msg tea.PasteMsg, m *editorCmp) (tea.Model, tea.Cmd) {
+type ResolveAbs func(path string) (string, error)
+
+func onPaste(fsys fs.FS, fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	path := strings.ReplaceAll(string(msg), "\\ ", " ")
-	// try to get an image
-	path, err := filepath.Abs(strings.TrimSpace(path))
+	// try to get an image, in this case specifically because the file
+	// path cannot have been limited to just the PWD as the root, since the
+	// path is coming from the contents of a clipboard
+	path, err := fsysAbs(strings.TrimSpace(path))
 	if err != nil {
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
@@ -259,13 +264,13 @@ func onPaste(msg tea.PasteMsg, m *editorCmp) (tea.Model, tea.Cmd) {
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
 	}
-	tooBig, _ := filepicker.IsFileTooBig(path, filepicker.MaxAttachmentSize)
+	tooBig, _ := filepicker.IsFileTooBigWithFS(fsys, path, filepicker.MaxAttachmentSize)
 	if tooBig {
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
 	}
 
-	content, err := os.ReadFile(path)
+	content, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
@@ -312,7 +317,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetValue(msg.Text)
 		m.textarea.MoveToEnd()
 	case tea.PasteMsg:
-		return onPaste(msg, m)
+		return onPaste(os.DirFS("."), filepath.Abs, m, msg) // inject fsys accessible from PWD
 	case commands.ToggleYoloModeMsg:
 		m.setEditorPrompt()
 		return m, nil
@@ -636,9 +641,9 @@ func newTextArea() *textarea.Model {
 func newEditor(app *app.App, resolveDirLister fsext.DirectoryListerResolver) *editorCmp {
 	e := editorCmp{
 		// TODO: remove the app instance from here
-		app:      app,
-		textarea: newTextArea(),
-		keyMap:   DefaultEditorKeyMap(),
+		app:             app,
+		textarea:        newTextArea(),
+		keyMap:          DefaultEditorKeyMap(),
 		listDirResolver: resolveDirLister,
 	}
 	e.setEditorPrompt()
