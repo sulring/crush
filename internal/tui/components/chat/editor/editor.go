@@ -175,7 +175,28 @@ func (m *editorCmp) repositionCompletions() tea.Msg {
 	return completions.RepositionCompletionsMsg{X: x, Y: y}
 }
 
-func onCompletionItemSelect(item FileCompletionItem, insert bool, m *editorCmp) {
+func onCompletionItemSelect(fsys fs.FS, item FileCompletionItem, insert bool, m *editorCmp) (tea.Model, tea.Cmd) {
+	path := item.Path
+	// check if item is an image
+	if isExtOfAllowedImageType(path) {
+		tooBig, _ := filepicker.IsFileTooBigWithFS(fsys, path, filepicker.MaxAttachmentSize)
+		if tooBig {
+			return m, nil
+		}
+
+		content, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return m, nil
+		}
+		mimeBufferSize := min(512, len(content))
+		mimeType := http.DetectContentType(content[:mimeBufferSize])
+		fileName := filepath.Base(path)
+		attachment := message.Attachment{FilePath: path, FileName: fileName, MimeType: mimeType, Content: content}
+		return m, util.CmdHandler(filepicker.FilePickedMsg{
+			Attachment: attachment,
+		})
+	}
+
 	word := m.textarea.Word()
 	// If the selected item is a file, insert its path into the textarea
 	value := m.textarea.Value()
@@ -190,6 +211,21 @@ func onCompletionItemSelect(item FileCompletionItem, insert bool, m *editorCmp) 
 		m.currentQuery = ""
 		m.completionsStartIndex = 0
 	}
+	
+	return m, nil
+}
+
+func isExtOfAllowedImageType(path string) bool {
+	isAllowedType := false
+	// TODO(tauraamui) [17/09/2025]: this needs to be combined with the actual data inference/checking
+	//                  of the contents that happens when we resolve the "mime" type
+	for _, ext := range filepicker.AllowedTypes {
+		if strings.HasSuffix(path, ext) {
+			isAllowedType = true
+			break
+		}
+	}
+	return isAllowedType
 }
 
 type ResolveAbs func(path string) (string, error)
@@ -205,14 +241,9 @@ func onPaste(fsys fs.FS, fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (te
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
 	}
-	isAllowedType := false
-	for _, ext := range filepicker.AllowedTypes {
-		if strings.HasSuffix(path, ext) {
-			isAllowedType = true
-			break
-		}
-	}
-	if !isAllowedType {
+	// TODO(tauraamui) [17/09/2025]: this needs to be combined with the actual data inference/checking
+	//                  of the contents that happens when we resolve the "mime" type
+	if !isExtOfAllowedImageType(path) {
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
 	}
