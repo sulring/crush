@@ -175,22 +175,20 @@ func (m *editorCmp) repositionCompletions() tea.Msg {
 	return completions.RepositionCompletionsMsg{X: x, Y: y}
 }
 
-func onCompletionItemSelect(msg completions.SelectCompletionMsg, m *editorCmp) {
-	if item, ok := msg.Value.(FileCompletionItem); ok {
-		word := m.textarea.Word()
-		// If the selected item is a file, insert its path into the textarea
-		value := m.textarea.Value()
-		value = value[:m.completionsStartIndex] + // Remove the current query
-			item.Path + // Insert the file path
-			value[m.completionsStartIndex+len(word):] // Append the rest of the value
-		// XXX: This will always move the cursor to the end of the textarea.
-		m.textarea.SetValue(value)
-		m.textarea.MoveToEnd()
-		if !msg.Insert {
-			m.isCompletionsOpen = false
-			m.currentQuery = ""
-			m.completionsStartIndex = 0
-		}
+func onCompletionItemSelect(item FileCompletionItem, insert bool, m *editorCmp) {
+	word := m.textarea.Word()
+	// If the selected item is a file, insert its path into the textarea
+	value := m.textarea.Value()
+	value = value[:m.completionsStartIndex] + // Remove the current query
+		item.Path + // Insert the file path
+		value[m.completionsStartIndex+len(word):] // Append the rest of the value
+	// XXX: This will always move the cursor to the end of the textarea.
+	m.textarea.SetValue(value)
+	m.textarea.MoveToEnd()
+	if !insert {
+		m.isCompletionsOpen = false
+		m.currentQuery = ""
+		m.completionsStartIndex = 0
 	}
 }
 
@@ -261,7 +259,9 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.isCompletionsOpen {
 			return m, nil
 		}
-		onCompletionItemSelect(msg, m)
+		if item, ok := msg.Value.(FileCompletionItem); ok {
+			onCompletionItemSelect(item, msg.Insert, m)
+		}
 	case commands.OpenExternalEditorMsg:
 		if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
 			return m, util.ReportWarn("Agent is working, please wait...")
