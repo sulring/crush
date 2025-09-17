@@ -200,21 +200,21 @@ func onCompletionItemSelect(fsys fs.FS, item FileCompletionItem, insert bool, m 
 
 	word := m.textarea.Word()
 	// If the selected item is a file, insert its path into the textarea
-	value := m.textarea.Value()
-	value = value[:m.completionsStartIndex] // Remove the current query
+	originalValue := m.textarea.Value()
+	newValue := originalValue[:m.completionsStartIndex] // Remove the current query
 	if cmd == nil {
-		value += path // insert the file path
+		newValue += path // insert the file path for non-images
 	}
-	value += value[m.completionsStartIndex+len(word):] // Append the rest of the value
+	newValue += originalValue[m.completionsStartIndex+len(word):] // Append the rest of the value
 	// XXX: This will always move the cursor to the end of the textarea.
-	m.textarea.SetValue(value)
+	m.textarea.SetValue(newValue)
 	m.textarea.MoveToEnd()
 	if !insert {
 		m.isCompletionsOpen = false
 		m.currentQuery = ""
 		m.completionsStartIndex = 0
 	}
-	
+
 	return m, cmd
 }
 
