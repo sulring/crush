@@ -200,7 +200,7 @@ func TestEditorAutoCompletion_OnNonImageFileFullPathInsertedFromQuery(t *testing
 	assert.NotNil(t, openCompletionsMsg)
 	require.True(t, testEditor.IsCompletionsOpen())
 
-	testEditor.textarea.SetValue("/random.tx")
+	testEditor.textarea.SetValue("I am looking for a file called /random.tx")
 
 	keyPressMsg = tea.KeyPressMsg{
 		Text: "t",
@@ -223,7 +223,7 @@ func TestEditorAutoCompletion_OnNonImageFileFullPathInsertedFromQuery(t *testing
 		t.Fatal("Expected noopEvent from cmds()")
 	}
 
-	assert.Equal(t, "./root/project/random.txt", testEditor.textarea.Value())
+	assert.Equal(t, "I am looking for a file called ./root/project/random.txt", testEditor.textarea.Value())
 }
 
 func TestEditor_OnCompletionPathToImageEmitsAttachFileMessage(t *testing.T) {
@@ -242,7 +242,7 @@ func TestEditor_OnCompletionPathToImageEmitsAttachFileMessage(t *testing.T) {
 
 	require.NotNil(t, cmd)
 	msg := cmd()
-	assert.NotNil(t, msg)
+	require.NotNil(t, msg)
 
 	var attachmentMsg message.Attachment
 	if fpickedMsg, ok := msg.(filepicker.FilePickedMsg); ok {
