@@ -226,6 +226,54 @@ func TestEditorAutoCompletion_OnNonImageFileFullPathInsertedFromQuery(t *testing
 	assert.Equal(t, "./root/project/random.txt", testEditor.textarea.Value())
 }
 
+func TestEditor_OnCompletionPathToImageEmitsAttachFileMessage(t *testing.T) {
+	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
+	fsys := fstest.MapFS{
+		"auto_completed_image.png": {
+			Data: pngMagicNumberData,
+		},
+		"random.txt": {
+			Data: []byte("Some content"),
+		},
+	}
+	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
+	model, cmd := onCompletionItemSelect(fsys, FileCompletionItem{Path: "auto_completed_image.png"}, true, testEditor)
+	testEditor = model.(*editorCmp)
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	assert.NotNil(t, msg)
+
+	var attachmentMsg message.Attachment
+	if fpickedMsg, ok := msg.(filepicker.FilePickedMsg); ok {
+		attachmentMsg = fpickedMsg.Attachment
+	}
+
+	assert.Equal(t, message.Attachment{
+		FilePath: "auto_completed_image.png",
+		FileName: "auto_completed_image.png",
+		MimeType: "image/png",
+		Content:  pngMagicNumberData,
+	}, attachmentMsg)
+}
+
+func TestEditor_OnCompletionPathToNonImageEmitsAttachFileMessage(t *testing.T) {
+	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
+	fsys := fstest.MapFS{
+		"auto_completed_image.png": {
+			Data: pngMagicNumberData,
+		},
+		"random.txt": {
+			Data: []byte("Some content"),
+		},
+	}
+	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
+	model, cmd := onCompletionItemSelect(fsys, FileCompletionItem{Path: "random.txt"}, true, testEditor)
+	testEditor = model.(*editorCmp)
+
+	assert.Nil(t, cmd)
+}
+
 func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
 	fsys := fstest.MapFS{
