@@ -176,6 +176,7 @@ func (m *editorCmp) repositionCompletions() tea.Msg {
 }
 
 func onCompletionItemSelect(fsys fs.FS, item FileCompletionItem, insert bool, m *editorCmp) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	path := item.Path
 	// check if item is an image
 	if isExtOfAllowedImageType(path) {
@@ -192,7 +193,7 @@ func onCompletionItemSelect(fsys fs.FS, item FileCompletionItem, insert bool, m 
 		mimeType := http.DetectContentType(content[:mimeBufferSize])
 		fileName := filepath.Base(path)
 		attachment := message.Attachment{FilePath: path, FileName: fileName, MimeType: mimeType, Content: content}
-		return m, util.CmdHandler(filepicker.FilePickedMsg{
+		cmd = util.CmdHandler(filepicker.FilePickedMsg{
 			Attachment: attachment,
 		})
 	}
@@ -200,9 +201,11 @@ func onCompletionItemSelect(fsys fs.FS, item FileCompletionItem, insert bool, m 
 	word := m.textarea.Word()
 	// If the selected item is a file, insert its path into the textarea
 	value := m.textarea.Value()
-	value = value[:m.completionsStartIndex] + // Remove the current query
-		item.Path + // Insert the file path
-		value[m.completionsStartIndex+len(word):] // Append the rest of the value
+	value = value[:m.completionsStartIndex] // Remove the current query
+	if cmd == nil {
+		value += path // insert the file path
+	}
+	value += value[m.completionsStartIndex+len(word):] // Append the rest of the value
 	// XXX: This will always move the cursor to the end of the textarea.
 	m.textarea.SetValue(value)
 	m.textarea.MoveToEnd()
@@ -212,7 +215,7 @@ func onCompletionItemSelect(fsys fs.FS, item FileCompletionItem, insert bool, m 
 		m.completionsStartIndex = 0
 	}
 	
-	return m, nil
+	return m, cmd
 }
 
 func isExtOfAllowedImageType(path string) bool {
@@ -291,7 +294,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if item, ok := msg.Value.(FileCompletionItem); ok {
-			onCompletionItemSelect(item, msg.Insert, m)
+			onCompletionItemSelect(os.DirFS("."), item, msg.Insert, m)
 		}
 	case commands.OpenExternalEditorMsg:
 		if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
