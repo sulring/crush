@@ -208,7 +208,6 @@ func TestEditorAutoCompletion_OnNonImageFileFullPathInsertedFromQuery(t *testing
 	m, msg = simulateUpdate(testEditor, keyPressMsg)
 	testEditor = m.(*editorCmp)
 
-
 	selectMsg := completions.SelectCompletionMsg{
 		Value: FileCompletionItem{
 			"./root/project/random.txt",

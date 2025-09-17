@@ -198,8 +198,10 @@ func (dl *directoryLister) getIgnore(path string) ignore.IgnoreParser {
 	})
 }
 
-type DirectoryLister func(initialPath string, ignorePatterns []string, limit int) ([]string, bool, error)
-type DirectoryListerResolver func() DirectoryLister
+type (
+	DirectoryLister         func(initialPath string, ignorePatterns []string, limit int) ([]string, bool, error)
+	DirectoryListerResolver func() DirectoryLister
+)
 
 func ResolveDirectoryLister() DirectoryLister {
 	return listDirectory
