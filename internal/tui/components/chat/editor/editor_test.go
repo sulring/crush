@@ -205,7 +205,7 @@ func TestEditorAutoCompletion_OnNonImageFileFullPathInsertedFromQuery(t *testing
 	keyPressMsg = tea.KeyPressMsg{
 		Text: "t",
 	}
-	m, msg = simulateUpdate(testEditor, keyPressMsg)
+	m, _ = simulateUpdate(testEditor, keyPressMsg)
 	testEditor = m.(*editorCmp)
 
 	selectMsg := completions.SelectCompletionMsg{
@@ -236,8 +236,7 @@ func TestEditor_OnCompletionPathToImageEmitsAttachFileMessage(t *testing.T) {
 		},
 	}
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	model, cmd := onCompletionItemSelect(fsys, FileCompletionItem{Path: "auto_completed_image.png"}, true, testEditor)
-	testEditor = model.(*editorCmp)
+	_, cmd := onCompletionItemSelect(fsys, FileCompletionItem{Path: "auto_completed_image.png"}, true, testEditor)
 
 	require.NotNil(t, cmd)
 	msg := cmd()
@@ -267,8 +266,7 @@ func TestEditor_OnCompletionPathToNonImageEmitsAttachFileMessage(t *testing.T) {
 		},
 	}
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	model, cmd := onCompletionItemSelect(fsys, FileCompletionItem{Path: "random.txt"}, true, testEditor)
-	testEditor = model.(*editorCmp)
+	_, cmd := onCompletionItemSelect(fsys, FileCompletionItem{Path: "random.txt"}, true, testEditor)
 
 	assert.Nil(t, cmd)
 }
@@ -284,8 +282,7 @@ func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 		},
 	}
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	model, cmd := onPaste(fsys, mockResolveAbs, testEditor, tea.PasteMsg("image.png"))
-	testEditor = model.(*editorCmp)
+	_, cmd := onPaste(fsys, mockResolveAbs, testEditor, tea.PasteMsg("image.png"))
 
 	require.NotNil(t, cmd)
 	msg := cmd()
@@ -315,8 +312,7 @@ func TestEditor_OnPastePathToNonImageEmitsAttachFileMessage(t *testing.T) {
 		},
 	}
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	model, cmd := onPaste(fsys, mockResolveAbs, testEditor, tea.PasteMsg("random.txt"))
-	testEditor = model.(*editorCmp)
+	_, cmd := onPaste(fsys, mockResolveAbs, testEditor, tea.PasteMsg("random.txt"))
 
 	assert.Nil(t, cmd)
 }
@@ -332,8 +328,7 @@ func TestHelperFunctions(t *testing.T) {
 		Text: "/",
 	}
 
-	m, cmds := testEditor.Update(keyPressMsg)
-	testEditor = m.(*editorCmp)
+	_, cmds := testEditor.Update(keyPressMsg)
 
 	// Execute the command and check if it returns a BatchMsg
 	msg := cmds()
