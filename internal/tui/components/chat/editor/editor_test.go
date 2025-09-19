@@ -12,6 +12,8 @@ import (
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs/filepicker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"os"
+	"path/filepath"
 )
 
 // executeBatchCommands executes all commands in a BatchMsg and returns the resulting messages
@@ -273,16 +275,30 @@ func TestEditor_OnCompletionPathToNonImageEmitsAttachFileMessage(t *testing.T) {
 
 func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
-	fsys := fstest.MapFS{
-		"image.png": {
-			Data: pngMagicNumberData,
-		},
-		"random.txt": {
-			Data: []byte("Some content"),
-		},
-	}
+
+	// Create a temporary directory and files for testing
+	tempDir := t.TempDir()
+
+	// Create test image file
+	imagePath := filepath.Join(tempDir, "image.png")
+	err := os.WriteFile(imagePath, pngMagicNumberData, 0o644)
+	require.NoError(t, err)
+
+	// Create test text file
+	textPath := filepath.Join(tempDir, "random.txt")
+	err = os.WriteFile(textPath, []byte("Some content"), 0o644)
+	require.NoError(t, err)
+
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	_, cmd := onPaste(fsys, mockResolveAbs, testEditor, tea.PasteMsg("image.png"))
+
+	// Change to temp directory so paths resolve correctly
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+
+	_, cmd := onPaste(filepath.Abs, testEditor, tea.PasteMsg("image.png"))
 
 	require.NotNil(t, cmd)
 	msg := cmd()
@@ -294,7 +310,7 @@ func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 	}
 
 	assert.Equal(t, message.Attachment{
-		FilePath: "image.png",
+		FilePath: imagePath,
 		FileName: "image.png",
 		MimeType: "image/png",
 		Content:  pngMagicNumberData,
@@ -303,16 +319,30 @@ func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 
 func TestEditor_OnPastePathToNonImageEmitsAttachFileMessage(t *testing.T) {
 	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
-	fsys := fstest.MapFS{
-		"image.png": {
-			Data: pngMagicNumberData,
-		},
-		"random.txt": {
-			Data: []byte("Some content"),
-		},
-	}
+
+	// Create a temporary directory and files for testing
+	tempDir := t.TempDir()
+
+	// Create test image file
+	imagePath := filepath.Join(tempDir, "image.png")
+	err := os.WriteFile(imagePath, pngMagicNumberData, 0o644)
+	require.NoError(t, err)
+
+	// Create test text file
+	textPath := filepath.Join(tempDir, "random.txt")
+	err = os.WriteFile(textPath, []byte("Some content"), 0o644)
+	require.NoError(t, err)
+
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	_, cmd := onPaste(fsys, mockResolveAbs, testEditor, tea.PasteMsg("random.txt"))
+
+	// Change to temp directory so paths resolve correctly
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+
+	_, cmd := onPaste(filepath.Abs, testEditor, tea.PasteMsg("random.txt"))
 
 	assert.Nil(t, cmd)
 }
