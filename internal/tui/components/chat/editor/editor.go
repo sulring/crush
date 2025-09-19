@@ -233,7 +233,7 @@ func isExtOfAllowedImageType(path string) bool {
 
 type ResolveAbs func(path string) (string, error)
 
-func onPaste(fsys fs.FS, fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+func onPaste(fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	path := strings.ReplaceAll(string(msg), "\\ ", " ")
 	// try to get an image, in this case specifically because the file
@@ -250,7 +250,7 @@ func onPaste(fsys fs.FS, fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (te
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
 	}
-	tooBig, _ := filepicker.IsFileTooBigWithFS(fsys, path, filepicker.MaxAttachmentSize)
+	tooBig, _ := filepicker.IsFileTooBig(path, filepicker.MaxAttachmentSize)
 	if tooBig {
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
@@ -258,7 +258,7 @@ func onPaste(fsys fs.FS, fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (te
 
 	// FIX(tauraamui) [19/09/2025]: this is incorrectly attempting to read a file from its abs path,
 	//                              whereas the FS we're accessing only starts from our relative dir/PWD
-	content, err := fs.ReadFile(fsys, path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
@@ -307,7 +307,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetValue(msg.Text)
 		m.textarea.MoveToEnd()
 	case tea.PasteMsg:
-		return onPaste(os.DirFS("."), filepath.Abs, m, msg) // inject fsys accessible from PWD
+		return onPaste(filepath.Abs, m, msg) // inject fsys accessible from PWD
 	case commands.ToggleYoloModeMsg:
 		m.setEditorPrompt()
 		return m, nil
