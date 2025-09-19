@@ -256,6 +256,8 @@ func onPaste(fsys fs.FS, fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (te
 		return m, cmd
 	}
 
+	// FIX(tauraamui) [19/09/2025]: this is incorrectly attempting to read a file from its abs path,
+	//                              whereas the FS we're accessing only starts from our relative dir/PWD
 	content, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		m.textarea, cmd = m.textarea.Update(msg)
@@ -294,7 +296,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if item, ok := msg.Value.(FileCompletionItem); ok {
-			onCompletionItemSelect(os.DirFS("."), item, msg.Insert, m)
+			return onCompletionItemSelect(os.DirFS("."), item, msg.Insert, m)
 		}
 	case commands.OpenExternalEditorMsg:
 		if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
