@@ -2,9 +2,12 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
@@ -13,17 +16,19 @@ import (
 
 // Client represents an RPC client connected to a Crush server.
 type Client struct {
-	h *http.Client
+	h    *http.Client
+	id   string
+	path string
 }
 
 // DefaultClient creates a new [Client] connected to the default server address.
-func DefaultClient() (*Client, error) {
-	return NewClient("unix", server.DefaultAddr())
+func DefaultClient(path string) (*Client, error) {
+	return NewClient(path, "unix", server.DefaultAddr())
 }
 
 // NewClient creates a new [Client] connected to the server at the given
 // network and address.
-func NewClient(network, address string) (*Client, error) {
+func NewClient(path, network, address string) (*Client, error) {
 	var p http.Protocols
 	p.SetHTTP1(true)
 	p.SetUnencryptedHTTP2(true)
@@ -39,7 +44,24 @@ func NewClient(network, address string) (*Client, error) {
 	h := &http.Client{
 		Transport: tr,
 	}
-	return &Client{h: h}, nil
+	hasher := sha256.New()
+	hasher.Write([]byte(path))
+	id := hex.EncodeToString(hasher.Sum(nil))
+	return &Client{
+		h:    h,
+		id:   id,
+		path: filepath.Clean(path),
+	}, nil
+}
+
+// ID returns the client's instance unique identifier.
+func (c *Client) ID() string {
+	return c.id
+}
+
+// Path returns the client's instance filesystem path.
+func (c *Client) Path() string {
+	return c.path
 }
 
 // GetConfig retrieves the server's configuration via RPC.
