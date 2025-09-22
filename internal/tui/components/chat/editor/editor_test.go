@@ -1,6 +1,8 @@
 package editor
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 
@@ -12,8 +14,6 @@ import (
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs/filepicker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"os"
-	"path/filepath"
 )
 
 // executeBatchCommands executes all commands in a BatchMsg and returns the resulting messages
