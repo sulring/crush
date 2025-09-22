@@ -35,6 +35,9 @@ type App struct {
 
 	LSPClients *csync.Map[string, *lsp.Client]
 
+	lspStates *csync.Map[string, LSPClientInfo]
+	lspBroker *pubsub.Broker[LSPEvent]
+
 	config *config.Config
 
 	serviceEventsWG *sync.WaitGroup
@@ -65,6 +68,8 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 		History:     files,
 		Permissions: permission.NewPermissionService(cfg.WorkingDir(), skipPermissionsRequests, allowedTools),
 		LSPClients:  csync.NewMap[string, *lsp.Client](),
+		lspStates:   csync.NewMap[string, LSPClientInfo](),
+		lspBroker:   pubsub.NewBroker[LSPEvent](),
 
 		globalCtx: ctx,
 
@@ -220,7 +225,7 @@ func (app *App) setupEvents() {
 	setupSubscriber(ctx, app.serviceEventsWG, "permissions-notifications", app.Permissions.SubscribeNotifications, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "history", app.History.Subscribe, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "mcp", agent.SubscribeMCPEvents, app.events)
-	setupSubscriber(ctx, app.serviceEventsWG, "lsp", SubscribeLSPEvents, app.events)
+	setupSubscriber(ctx, app.serviceEventsWG, "lsp", app.SubscribeLSPEvents, app.events)
 	cleanupFunc := func() error {
 		cancel()
 		app.serviceEventsWG.Wait()
