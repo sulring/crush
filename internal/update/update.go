@@ -15,7 +15,7 @@ import (
 
 const (
 	githubAPIURL = "https://api.github.com/repos/charmbracelet/crush/releases/latest"
-	userAgent    = "crush-update-check"
+	userAgent    = "crush/1.0"
 )
 
 // Release represents a GitHub release.
