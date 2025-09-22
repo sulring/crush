@@ -110,12 +110,28 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	var p http.Protocols
 	p.SetHTTP1(true)
 	p.SetUnencryptedHTTP2(true)
+	c := &controllerV1{Server: s}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/config", s.handleGetConfig)
-	mux.HandleFunc("GET /v1/instances", s.handleGetInstances)
-	mux.HandleFunc("POST /v1/instances", s.handlePostInstances)
-	mux.HandleFunc("DELETE /v1/instances", s.handleDeleteInstances)
-	mux.HandleFunc("GET /v1/instances/{id}/events", s.handleGetInstanceEvents)
+	mux.HandleFunc("GET /v1/config", c.handleGetConfig)
+	mux.HandleFunc("GET /v1/instances", c.handleGetInstances)
+	mux.HandleFunc("POST /v1/instances", c.handlePostInstances)
+	mux.HandleFunc("DELETE /v1/instances", c.handleDeleteInstances)
+	mux.HandleFunc("GET /v1/instances/{id}/events", c.handleGetInstanceEvents)
+	mux.HandleFunc("GET /v1/instances/{id}/sessions", c.handleGetInstanceSessions)
+	mux.HandleFunc("POST /v1/instances/{id}/sessions", c.handlePostInstanceSessions)
+	mux.HandleFunc("GET /v1/instances/{id}/sessions/{sid}", c.handleGetInstanceSession)
+	mux.HandleFunc("GET /v1/instances/{id}/sessions/{sid}/history", c.handleGetInstanceSessionHistory)
+	mux.HandleFunc("GET /v1/instances/{id}/sessions/{sid}/messages", c.handleGetInstanceSessionMessages)
+	mux.HandleFunc("GET /v1/instances/{id}/lsps", c.handleGetInstanceLSPs)
+	mux.HandleFunc("GET /v1/instances/{id}/lsps/{lsp}/diagnostics", c.handleGetInstanceLSPDiagnostics)
+	mux.HandleFunc("GET /v1/instances/{id}/agent", c.handleGetInstanceAgent)
+	mux.HandleFunc("POST /v1/instances/{id}/agent", c.handlePostInstanceAgent)
+	mux.HandleFunc("POST /v1/instances/{id}/agent/init", c.handlePostInstanceAgentInit)
+	mux.HandleFunc("POST /v1/instances/{id}/agent/update", c.handlePostInstanceAgentUpdate)
+	mux.HandleFunc("POST /v1/instances/{id}/agent/sessions/{sid}/cancel", c.handlePostInstanceAgentSessionCancel)
+	mux.HandleFunc("GET /v1/instances/{id}/agent/sessions/{sid}/prompts/queued", c.handleGetInstanceAgentSessionPromptQueued)
+	mux.HandleFunc("POST /v1/instances/{id}/agent/sessions/{sid}/prompts/clear", c.handlePostInstanceAgentSessionPromptClear)
+	mux.HandleFunc("POST /v1/instances/{id}/agent/sessions/{sid}/summarize", c.handleGetInstanceAgentSessionSummarize)
 	s.h = &http.Server{
 		Protocols: &p,
 		Handler:   s.loggingHandler(mux),
