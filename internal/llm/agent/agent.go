@@ -39,15 +39,24 @@ const (
 	AgentEventTypeSummarize AgentEventType = "summarize"
 )
 
+func (t AgentEventType) MarshalText() ([]byte, error) {
+	return []byte(t), nil
+}
+
+func (t *AgentEventType) UnmarshalText(text []byte) error {
+	*t = AgentEventType(text)
+	return nil
+}
+
 type AgentEvent struct {
-	Type    AgentEventType
-	Message message.Message
-	Error   error
+	Type    AgentEventType  `json:"type"`
+	Message message.Message `json:"message"`
+	Error   error           `json:"error,omitempty"`
 
 	// When summarizing
-	SessionID string
-	Progress  string
-	Done      bool
+	SessionID string `json:"session_id,omitempty"`
+	Progress  string `json:"progress,omitempty"`
+	Done      bool   `json:"done,omitempty"`
 }
 
 type Service interface {

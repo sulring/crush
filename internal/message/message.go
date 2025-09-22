@@ -13,10 +13,10 @@ import (
 )
 
 type CreateMessageParams struct {
-	Role     MessageRole
-	Parts    []ContentPart
-	Model    string
-	Provider string
+	Role     MessageRole   `json:"role"`
+	Parts    []ContentPart `json:"parts"`
+	Model    string        `json:"model"`
+	Provider string        `json:"provider,omitempty"`
 }
 
 type Service interface {

@@ -17,6 +17,15 @@ const (
 	Tool      MessageRole = "tool"
 )
 
+func (r MessageRole) MarshalText() ([]byte, error) {
+	return []byte(r), nil
+}
+
+func (r *MessageRole) UnmarshalText(data []byte) error {
+	*r = MessageRole(data)
+	return nil
+}
+
 type FinishReason string
 
 const (
@@ -30,6 +39,15 @@ const (
 	// Should never happen
 	FinishReasonUnknown FinishReason = "unknown"
 )
+
+func (fr FinishReason) MarshalText() ([]byte, error) {
+	return []byte(fr), nil
+}
+
+func (fr *FinishReason) UnmarshalText(data []byte) error {
+	*fr = FinishReason(data)
+	return nil
+}
 
 type ContentPart interface {
 	isPart()
@@ -114,14 +132,14 @@ type Finish struct {
 func (Finish) isPart() {}
 
 type Message struct {
-	ID        string
-	Role      MessageRole
-	SessionID string
-	Parts     []ContentPart
-	Model     string
-	Provider  string
-	CreatedAt int64
-	UpdatedAt int64
+	ID        string        `json:"id"`
+	Role      MessageRole   `json:"role"`
+	SessionID string        `json:"session_id"`
+	Parts     []ContentPart `json:"parts"`
+	Model     string        `json:"model"`
+	Provider  string        `json:"provider"`
+	CreatedAt int64         `json:"created_at"`
+	UpdatedAt int64         `json:"updated_at"`
 }
 
 func (m *Message) Content() TextContent {

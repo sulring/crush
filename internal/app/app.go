@@ -94,6 +94,11 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 	return app, nil
 }
 
+// Events returns the application's event channel.
+func (app *App) Events() <-chan tea.Msg {
+	return app.events
+}
+
 // Config returns the application configuration.
 func (app *App) Config() *config.Config {
 	return app.config

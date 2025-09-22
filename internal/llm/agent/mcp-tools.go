@@ -34,6 +34,26 @@ const (
 	MCPStateError
 )
 
+func (s MCPState) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
+}
+
+func (s *MCPState) UnmarshalText(data []byte) error {
+	switch string(data) {
+	case "disabled":
+		*s = MCPStateDisabled
+	case "starting":
+		*s = MCPStateStarting
+	case "connected":
+		*s = MCPStateConnected
+	case "error":
+		*s = MCPStateError
+	default:
+		return fmt.Errorf("unknown mcp state: %s", data)
+	}
+	return nil
+}
+
 func (s MCPState) String() string {
 	switch s {
 	case MCPStateDisabled:
@@ -56,13 +76,22 @@ const (
 	MCPEventStateChanged MCPEventType = "state_changed"
 )
 
+func (t MCPEventType) MarshalText() ([]byte, error) {
+	return []byte(t), nil
+}
+
+func (t *MCPEventType) UnmarshalText(data []byte) error {
+	*t = MCPEventType(data)
+	return nil
+}
+
 // MCPEvent represents an event in the MCP system
 type MCPEvent struct {
-	Type      MCPEventType
-	Name      string
-	State     MCPState
-	Error     error
-	ToolCount int
+	Type      MCPEventType `json:"type"`
+	Name      string       `json:"name"`
+	State     MCPState     `json:"state"`
+	Error     error        `json:"error,omitempty"`
+	ToolCount int          `json:"tool_count,omitempty"`
 }
 
 // MCPClientInfo holds information about an MCP client's state

@@ -18,11 +18,20 @@ type (
 
 	// Event represents an event in the lifecycle of a resource
 	Event[T any] struct {
-		Type    EventType
-		Payload T
+		Type    EventType `json:"type"`
+		Payload T         `json:"payload"`
 	}
 
 	Publisher[T any] interface {
 		Publish(EventType, T)
 	}
 )
+
+func (t EventType) MarshalText() ([]byte, error) {
+	return []byte(t), nil
+}
+
+func (t *EventType) UnmarshalText(data []byte) error {
+	*t = EventType(data)
+	return nil
+}

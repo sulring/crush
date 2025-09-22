@@ -157,6 +157,37 @@ const (
 	StateDisabled
 )
 
+func (s ServerState) MarshalText() ([]byte, error) {
+	switch s {
+	case StateStarting:
+		return []byte("starting"), nil
+	case StateReady:
+		return []byte("ready"), nil
+	case StateError:
+		return []byte("error"), nil
+	case StateDisabled:
+		return []byte("disabled"), nil
+	default:
+		return nil, fmt.Errorf("unknown server state: %d", s)
+	}
+}
+
+func (s *ServerState) UnmarshalText(data []byte) error {
+	switch strings.ToLower(string(data)) {
+	case "starting":
+		*s = StateStarting
+	case "ready":
+		*s = StateReady
+	case "error":
+		*s = StateError
+	case "disabled":
+		*s = StateDisabled
+	default:
+		return fmt.Errorf("unknown server state: %s", data)
+	}
+	return nil
+}
+
 // GetServerState returns the current state of the LSP server
 func (c *Client) GetServerState() ServerState {
 	if val := c.serverState.Load(); val != nil {

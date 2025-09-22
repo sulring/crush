@@ -5,20 +5,16 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/rpc"
+	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync/atomic"
-	"time"
 
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
-
-	msgpackrpc "github.com/hashicorp/net-rpc-msgpackrpc/v2"
 )
 
 // ErrServerClosed is returned when the server is closed.
@@ -41,6 +37,8 @@ const (
 type Instance struct {
 	*app.App
 	State InstanceState
+	ln    net.Listener
+	cfg   *config.Config
 	id    string
 	path  string
 }
@@ -58,15 +56,15 @@ func (i *Instance) Path() string {
 // DefaultAddr returns the default address path for the Crush server based on
 // the operating system.
 func DefaultAddr() string {
-	sock := "crush.sock"
+	sockPath := "crush.sock"
 	user, err := user.Current()
 	if err == nil && user.Uid != "" {
-		sock = fmt.Sprintf("crush-%s.sock", user.Uid)
+		sockPath = fmt.Sprintf("crush-%s.sock", user.Uid)
 	}
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf(`\\.\pipe\%s`, sock)
+		return fmt.Sprintf(`\\.\pipe\%s`, sockPath)
 	}
-	return filepath.Join(os.TempDir(), sock)
+	return filepath.Join(os.TempDir(), sockPath)
 }
 
 // Server represents a Crush server instance bound to a specific address.
@@ -74,14 +72,13 @@ type Server struct {
 	// Addr can be a TCP address, a Unix socket path, or a Windows named pipe.
 	Addr string
 
+	h  *http.Server
+	ln net.Listener
+
 	// instances is a map of running applications managed by the server.
 	instances *csync.Map[string, *Instance]
-	// listeners is the network listener for the server.
-	listeners *csync.Map[*net.Listener, struct{}]
 	cfg       *config.Config
 	logger    *slog.Logger
-
-	shutdown atomic.Bool
 }
 
 // SetLogger sets the logger for the server.
@@ -109,44 +106,33 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	s.Addr = address
 	s.cfg = cfg
 	s.instances = csync.NewMap[string, *Instance]()
-	rpc.Register(&ServerProto{s})
+
+	var p http.Protocols
+	p.SetHTTP1(true)
+	p.SetUnencryptedHTTP2(true)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/config", s.handleGetConfig)
+	mux.HandleFunc("GET /v1/instances", s.handleGetInstances)
+	mux.HandleFunc("POST /v1/instances", s.handlePostInstances)
+	mux.HandleFunc("DELETE /v1/instances", s.handleDeleteInstances)
+	mux.HandleFunc("GET /v1/instances/{id}/events", s.handleGetInstanceEvents)
+	s.h = &http.Server{
+		Protocols: &p,
+		Handler:   s.loggingHandler(mux),
+	}
 	return s
 }
 
 // Serve accepts incoming connections on the listener.
 func (s *Server) Serve(ln net.Listener) error {
-	if s.listeners == nil {
-		s.listeners = csync.NewMap[*net.Listener, struct{}]()
-	}
-	s.listeners.Set(&ln, struct{}{})
-
-	var tempDelay time.Duration // how long to sleep on accept failure
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			if s.shuttingDown() {
-				return ErrServerClosed
-			}
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				if tempDelay == 0 {
-					tempDelay = 5 * time.Millisecond
-				} else {
-					tempDelay *= 2
-				}
-				if max := 1 * time.Second; tempDelay > max {
-					tempDelay = max
-				}
-				time.Sleep(tempDelay)
-				continue
-			}
-			return fmt.Errorf("failed to accept connection: %w", err)
-		}
-		go s.handleConn(conn)
-	}
+	return s.h.Serve(ln)
 }
 
 // ListenAndServe starts the server and begins accepting connections.
 func (s *Server) ListenAndServe() error {
+	if s.ln != nil {
+		return fmt.Errorf("server already started")
+	}
 	ln, err := listen("unix", s.Addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", s.Addr, err)
@@ -154,63 +140,33 @@ func (s *Server) ListenAndServe() error {
 	return s.Serve(ln)
 }
 
+func (s *Server) closeListener() {
+	if s.ln != nil {
+		s.ln.Close()
+		s.ln = nil
+	}
+}
+
 // Close force close all listeners and connections.
 func (s *Server) Close() error {
-	s.shutdown.Store(true)
-	var firstErr error
-	for k := range s.listeners.Seq2() {
-		if err := (*k).Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-		s.listeners.Del(k)
-	}
-	return firstErr
+	defer func() { s.closeListener() }()
+	return s.h.Close()
 }
 
 // Shutdown gracefully shuts down the server without interrupting active
 // connections. It stops accepting new connections and waits for existing
 // connections to finish.
 func (s *Server) Shutdown(ctx context.Context) error {
-	// TODO: implement graceful shutdown
-	return s.Close()
+	defer func() { s.closeListener() }()
+	return s.h.Shutdown(ctx)
 }
 
-func (s *Server) handleConn(conn net.Conn) {
-	s.info("accepted connection", "remote_addr", conn.LocalAddr())
-	codec := &ServerCodec{
-		MsgpackCodec: msgpackrpc.NewCodec(true, true, conn),
-		logger: s.logger.With(
-			slog.String("remote_addr", conn.RemoteAddr().String()),
-			slog.String("local_addr", conn.LocalAddr().String()),
-		),
-	}
-	rpc.ServeCodec(codec)
-}
-
-func (s *Server) shuttingDown() bool {
-	return s.shutdown.Load()
-}
-
-func (s *Server) info(msg string, args ...any) {
+func (s *Server) logError(r *http.Request, msg string, args ...any) {
 	if s.logger != nil {
-		s.logger.Info(msg, args...)
-	}
-}
-
-func (s *Server) debug(msg string, args ...any) {
-	if s.logger != nil {
-		s.logger.Debug(msg, args...)
-	}
-}
-
-func (s *Server) error(msg string, args ...any) {
-	if s.logger != nil {
-		s.logger.Error(msg, args...)
-	}
-}
-
-func (s *Server) warn(msg string, args ...any) {
-	if s.logger != nil {
-		s.logger.Warn(msg, args...)
+		s.logger.With(
+			slog.String("method", r.Method),
+			slog.String("url", r.URL.String()),
+			slog.String("remote_addr", r.RemoteAddr),
+		).Error(msg, args...)
 	}
 }

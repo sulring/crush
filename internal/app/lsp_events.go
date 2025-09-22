@@ -18,13 +18,22 @@ const (
 	LSPEventDiagnosticsChanged LSPEventType = "diagnostics_changed"
 )
 
+func (e LSPEventType) MarshalText() ([]byte, error) {
+	return []byte(e), nil
+}
+
+func (e *LSPEventType) UnmarshalText(data []byte) error {
+	*e = LSPEventType(data)
+	return nil
+}
+
 // LSPEvent represents an event in the LSP system
 type LSPEvent struct {
-	Type            LSPEventType
-	Name            string
-	State           lsp.ServerState
-	Error           error
-	DiagnosticCount int
+	Type            LSPEventType    `json:"type"`
+	Name            string          `json:"name"`
+	State           lsp.ServerState `json:"state"`
+	Error           error           `json:"error,omitempty"`
+	DiagnosticCount int             `json:"diagnostic_count,omitempty"`
 }
 
 // LSPClientInfo holds information about an LSP client's state
