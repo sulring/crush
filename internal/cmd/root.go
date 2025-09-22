@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/crush/internal/app"
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/client"
+	"github.com/charmbracelet/crush/internal/log"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/tui"
 	"github.com/charmbracelet/crush/internal/version"
 	"github.com/charmbracelet/fang"
@@ -60,22 +60,30 @@ crush run "Explain the use of context in Go"
 crush -y
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app, err := setupApp(cmd)
+		c, err := setupApp(cmd)
 		if err != nil {
 			return err
 		}
-		defer app.Shutdown()
+
+		m := tui.New(c)
+
+		defer func() { c.DeleteInstance(cmd.Context(), c.ID()) }()
 
 		// Set up the TUI.
 		program := tea.NewProgram(
-			tui.New(app),
+			m,
 			tea.WithAltScreen(),
 			tea.WithContext(cmd.Context()),
 			tea.WithMouseCellMotion(),            // Use cell motion instead of all motion to reduce event flooding
 			tea.WithFilter(tui.MouseEventFilter), // Filter mouse events based on focus state
 		)
 
-		go app.Subscribe(program)
+		evc, err := c.SubscribeEvents(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("failed to subscribe to events: %v", err)
+		}
+
+		go streamEvents(cmd.Context(), evc, program)
 
 		if _, err := program.Run(); err != nil {
 			slog.Error("TUI run error", "error", err)
@@ -96,9 +104,30 @@ func Execute() {
 	}
 }
 
+func streamEvents(ctx context.Context, evc <-chan any, p *tea.Program) {
+	defer log.RecoverPanic("app.Subscribe", func() {
+		slog.Info("TUI subscription panic: attempting graceful shutdown")
+		p.Quit()
+	})
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Debug("TUI message handler shutting down")
+			return
+		case ev, ok := <-evc:
+			if !ok {
+				slog.Debug("TUI message channel closed")
+				return
+			}
+			p.Send(ev)
+		}
+	}
+}
+
 // setupApp handles the common setup logic for both interactive and non-interactive modes.
 // It returns the app instance, config, cleanup function, and any error.
-func setupApp(cmd *cobra.Command) (*app.App, error) {
+func setupApp(cmd *cobra.Command) (*client.Client, error) {
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
@@ -109,33 +138,20 @@ func setupApp(cmd *cobra.Command) (*app.App, error) {
 		return nil, err
 	}
 
-	cfg, err := config.Init(cwd, dataDir, debug)
+	c, err := client.DefaultClient(cwd)
 	if err != nil {
 		return nil, err
 	}
 
-	if cfg.Permissions == nil {
-		cfg.Permissions = &config.Permissions{}
-	}
-	cfg.Permissions.SkipRequests = yolo
-
-	if err := createDotCrushDir(cfg.Options.DataDirectory); err != nil {
-		return nil, err
-	}
-
-	// Connect to DB; this will also run migrations.
-	conn, err := db.Connect(ctx, cfg.Options.DataDirectory)
-	if err != nil {
-		return nil, err
+	if _, err := c.CreateInstance(ctx, proto.Instance{
+		DataDir: dataDir,
+		Debug:   debug,
+		YOLO:    yolo,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create or connect to instance: %v", err)
 	}
 
-	appInstance, err := app.New(ctx, conn, cfg)
-	if err != nil {
-		slog.Error("Failed to create app instance", "error", err)
-		return nil, err
-	}
-
-	return appInstance, nil
+	return c, nil
 }
 
 func MaybePrependStdin(prompt string) (string, error) {
