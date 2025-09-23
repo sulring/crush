@@ -195,7 +195,7 @@ func (b *McpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 	return runTool(ctx, b.mcpName, b.tool.Name, params.Input)
 }
 
-func createToolsMaker(ctx context.Context, permissions permission.Service, workingDir string) func(string, []mcp.Tool) []tools.BaseTool {
+func createToolsMaker(permissions permission.Service, workingDir string) func(string, []mcp.Tool) []tools.BaseTool {
 	return func(name string, mcpToolsList []mcp.Tool) []tools.BaseTool {
 		mcpTools := make([]tools.BaseTool, 0, len(mcpToolsList))
 		for _, tool := range mcpToolsList {
@@ -294,7 +294,7 @@ func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *con
 	var wg sync.WaitGroup
 	result := csync.NewSlice[tools.BaseTool]()
 
-	toolsMaker = createToolsMaker(ctx, permissions, cfg.WorkingDir())
+	toolsMaker = createToolsMaker(permissions, cfg.WorkingDir())
 
 	// Initialize states for all configured MCPs
 	for name, m := range cfg.MCP {
