@@ -298,7 +298,8 @@ func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 	err = os.Chdir(tempDir)
 	require.NoError(t, err)
 
-	_, cmd := onPaste(filepath.Abs, testEditor, tea.PasteMsg("image.png"))
+	absRef := filepath.Abs
+	_, cmd := onPaste(absRef, testEditor, tea.PasteMsg("image.png"))
 
 	require.NotNil(t, cmd)
 	msg := cmd()
@@ -309,8 +310,10 @@ func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 		attachmentMsg = fpickedMsg.Attachment
 	}
 
+	absImagePath, err := absRef(imagePath)
+	assert.NoError(t, err)
 	assert.Equal(t, message.Attachment{
-		FilePath: imagePath,
+		FilePath: absImagePath,
 		FileName: "image.png",
 		MimeType: "image/png",
 		Content:  pngMagicNumberData,
