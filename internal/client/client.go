@@ -43,6 +43,7 @@ func NewClient(path, network, address string) (*Client, error) {
 	}
 	h := &http.Client{
 		Transport: tr,
+		Timeout:   0, // we need this to be 0 for long-lived connections and SSE streams
 	}
 	hasher := sha256.New()
 	hasher.Write([]byte(path))
@@ -64,8 +65,8 @@ func (c *Client) Path() string {
 	return c.path
 }
 
-// GetConfig retrieves the server's configuration via RPC.
-func (c *Client) GetConfig() (*config.Config, error) {
+// GetGlobalConfig retrieves the server's configuration via RPC.
+func (c *Client) GetGlobalConfig() (*config.Config, error) {
 	var cfg config.Config
 	rsp, err := c.h.Get("http://localhost/v1/config")
 	if err != nil {
