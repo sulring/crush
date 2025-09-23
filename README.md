@@ -180,14 +180,17 @@ That said, you can also set environment variables for preferred providers.
 | `ANTHROPIC_API_KEY`         | Anthropic                                          |
 | `OPENAI_API_KEY`            | OpenAI                                             |
 | `OPENROUTER_API_KEY`        | OpenRouter                                         |
-| `CEREBRAS_API_KEY`          | Cerebras                                           |
 | `GEMINI_API_KEY`            | Google Gemini                                      |
+| `CEREBRAS_API_KEY`          | Cerebras                                           |
+| `HF_TOKEN`                  | Huggingface Inference                              |
 | `VERTEXAI_PROJECT`          | Google Cloud VertexAI (Gemini)                     |
 | `VERTEXAI_LOCATION`         | Google Cloud VertexAI (Gemini)                     |
 | `GROQ_API_KEY`              | Groq                                               |
 | `AWS_ACCESS_KEY_ID`         | AWS Bedrock (Claude)                               |
 | `AWS_SECRET_ACCESS_KEY`     | AWS Bedrock (Claude)                               |
 | `AWS_REGION`                | AWS Bedrock (Claude)                               |
+| `AWS_PROFILE`               | Custom AWS Profile                                 |
+| `AWS_REGION`                | AWS Region                                         |
 | `AZURE_OPENAI_API_ENDPOINT` | Azure OpenAI models                                |
 | `AZURE_OPENAI_API_KEY`      | Azure OpenAI models (optional when using Entra ID) |
 | `AZURE_OPENAI_API_VERSION`  | Azure OpenAI models                                |
@@ -270,6 +273,8 @@ using `$(echo $VAR)` syntax.
       "type": "stdio",
       "command": "node",
       "args": ["/path/to/mcp-server.js"],
+      "timeout": 120,
+      "disabled": false,
       "env": {
         "NODE_ENV": "production"
       }
@@ -277,6 +282,8 @@ using `$(echo $VAR)` syntax.
     "github": {
       "type": "http",
       "url": "https://example.com/mcp/",
+      "timeout": 120,
+      "disabled": false,
       "headers": {
         "Authorization": "$(echo Bearer $EXAMPLE_MCP_TOKEN)"
       }
@@ -284,6 +291,8 @@ using `$(echo $VAR)` syntax.
     "streaming-service": {
       "type": "sse",
       "url": "https://example.com/mcp/sse",
+      "timeout": 120,
+      "disabled": false,
       "headers": {
         "API-Key": "$(echo $API_KEY)"
       }
