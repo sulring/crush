@@ -66,7 +66,6 @@ type Service interface {
 }
 
 type agent struct {
-	globalCtx    context.Context
 	cleanupFuncs []func()
 
 	*pubsub.Broker[AgentEvent]
@@ -231,7 +230,6 @@ func NewAgent(
 	}
 
 	a := &agent{
-		globalCtx:           ctx,
 		Broker:              pubsub.NewBroker[AgentEvent](),
 		agentCfg:            agentCfg,
 		provider:            agentProvider,
@@ -246,7 +244,7 @@ func NewAgent(
 		baseTools:           csync.NewLazyMap(baseToolsFn),
 		promptQueue:         csync.NewMap[string, []string](),
 	}
-	a.setupEvents()
+	a.setupEvents(ctx)
 	return a, nil
 }
 
@@ -1057,8 +1055,8 @@ func (a *agent) getToolByName(name string) (tools.BaseTool, bool) {
 	return tool, ok
 }
 
-func (a *agent) setupEvents() {
-	ctx, cancel := context.WithCancel(a.globalCtx)
+func (a *agent) setupEvents(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
 		for event := range SubscribeMCPEvents(ctx) {
