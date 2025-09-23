@@ -1,14 +1,14 @@
 package header
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/fsext"
-	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/tui/styles"
@@ -29,14 +29,16 @@ type Header interface {
 type header struct {
 	width       int
 	session     session.Session
-	lspClients  *csync.Map[string, *lsp.Client]
+	client      *client.Client
+	cfg         *config.Config
 	detailsOpen bool
 }
 
-func New(lspClients *csync.Map[string, *lsp.Client]) Header {
+func New(lspClients *client.Client, cfg *config.Config) Header {
 	return &header{
-		lspClients: lspClients,
-		width:      0,
+		client: lspClients,
+		cfg:    cfg,
+		width:  0,
 	}
 }
 
@@ -105,8 +107,19 @@ func (h *header) details(availWidth int) string {
 	var parts []string
 
 	errorCount := 0
-	for l := range h.lspClients.Seq() {
-		for _, diagnostics := range l.GetDiagnostics() {
+	// TODO: Move this to update?
+	lsps, err := h.client.GetLSPs(context.TODO())
+	if err != nil {
+		return ""
+	}
+
+	for l := range lsps {
+		// TODO: Same here, move to update?
+		diags, err := h.client.GetLSPDiagnostics(context.TODO(), l)
+		if err != nil {
+			return ""
+		}
+		for _, diagnostics := range diags {
 			for _, diagnostic := range diagnostics {
 				if diagnostic.Severity == protocol.SeverityError {
 					errorCount++
@@ -119,8 +132,11 @@ func (h *header) details(availWidth int) string {
 		parts = append(parts, s.Error.Render(fmt.Sprintf("%s%d", styles.ErrorIcon, errorCount)))
 	}
 
-	agentCfg := config.Get().Agents["coder"]
-	model := config.Get().GetModelByType(agentCfg.Model)
+	agentCfg := h.cfg.Agents["coder"]
+	model := h.cfg.GetModelByType(agentCfg.Model)
+	if model == nil {
+		return "No model"
+	}
 	percentage := (float64(h.session.CompletionTokens+h.session.PromptTokens) / float64(model.ContextWindow)) * 100
 	formattedPercentage := s.Muted.Render(fmt.Sprintf("%d%%", int(percentage)))
 	parts = append(parts, formattedPercentage)
@@ -138,7 +154,7 @@ func (h *header) details(availWidth int) string {
 
 	// Truncate cwd if necessary, and insert it at the beginning.
 	const dirTrimLimit = 4
-	cwd := fsext.DirTrim(fsext.PrettyPath(config.Get().WorkingDir()), dirTrimLimit)
+	cwd := fsext.DirTrim(fsext.PrettyPath(h.cfg.WorkingDir()), dirTrimLimit)
 	cwd = ansi.Truncate(cwd, max(0, availWidth-lipgloss.Width(metadata)), "…")
 	cwd = s.Muted.Render(cwd)
 

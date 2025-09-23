@@ -1,12 +1,13 @@
 package lsp
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
-	"github.com/charmbracelet/crush/internal/app"
+	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/styles"
@@ -23,7 +24,7 @@ type RenderOptions struct {
 }
 
 // RenderLSPList renders a list of LSP status items with the given options.
-func RenderLSPList(lspClients *csync.Map[string, *lsp.Client], opts RenderOptions) []string {
+func RenderLSPList(c *client.Client, cfg *config.Config, opts RenderOptions) []string {
 	t := styles.CurrentTheme()
 	lspList := []string{}
 
@@ -36,14 +37,18 @@ func RenderLSPList(lspClients *csync.Map[string, *lsp.Client], opts RenderOption
 		lspList = append(lspList, section, "")
 	}
 
-	lspConfigs := config.Get().LSP.Sorted()
+	lspConfigs := cfg.LSP.Sorted()
 	if len(lspConfigs) == 0 {
 		lspList = append(lspList, t.S().Base.Foreground(t.Border).Render("None"))
 		return lspList
 	}
 
 	// Get LSP states
-	lspStates := app.GetLSPStates()
+	lspStates, err := c.GetLSPs(context.TODO())
+	if err != nil {
+		slog.Error("failed to get lsp clients")
+		return nil
+	}
 
 	// Determine how many items to show
 	maxItems := len(lspConfigs)
@@ -85,15 +90,20 @@ func RenderLSPList(lspClients *csync.Map[string, *lsp.Client], opts RenderOption
 
 		// Calculate diagnostic counts if we have LSP clients
 		var extraContent string
-		if lspClients != nil {
+		if c != nil {
 			lspErrs := map[protocol.DiagnosticSeverity]int{
 				protocol.SeverityError:       0,
 				protocol.SeverityWarning:     0,
 				protocol.SeverityHint:        0,
 				protocol.SeverityInformation: 0,
 			}
-			if client, ok := lspClients.Get(l.Name); ok {
-				for _, diagnostics := range client.GetDiagnostics() {
+			if _, ok := lspStates[l.Name]; ok {
+				diags, err := c.GetLSPDiagnostics(context.TODO(), l.Name)
+				if err != nil {
+					slog.Error("couldn't get lsp diagnostics", "lsp", l.Name)
+					return nil
+				}
+				for _, diagnostics := range diags {
 					for _, diagnostic := range diagnostics {
 						if severity, ok := lspErrs[diagnostic.Severity]; ok {
 							lspErrs[diagnostic.Severity] = severity + 1
@@ -135,13 +145,18 @@ func RenderLSPList(lspClients *csync.Map[string, *lsp.Client], opts RenderOption
 }
 
 // RenderLSPBlock renders a complete LSP block with optional truncation indicator.
-func RenderLSPBlock(lspClients *csync.Map[string, *lsp.Client], opts RenderOptions, showTruncationIndicator bool) string {
+func RenderLSPBlock(c *client.Client, cfg *config.Config, opts RenderOptions, showTruncationIndicator bool) string {
 	t := styles.CurrentTheme()
-	lspList := RenderLSPList(lspClients, opts)
+	lspList := RenderLSPList(c, cfg, opts)
+	cfg, err := c.GetConfig(context.TODO())
+	if err != nil {
+		slog.Error("failed to get config for lsp block rendering", "error", err)
+		return ""
+	}
 
 	// Add truncation indicator if needed
 	if showTruncationIndicator && opts.MaxItems > 0 {
-		lspConfigs := config.Get().LSP.Sorted()
+		lspConfigs := cfg.LSP.Sorted()
 		if len(lspConfigs) > opts.MaxItems {
 			remaining := len(lspConfigs) - opts.MaxItems
 			if remaining == 1 {

@@ -20,7 +20,7 @@ type RenderOptions struct {
 }
 
 // RenderMCPList renders a list of MCP status items with the given options.
-func RenderMCPList(opts RenderOptions) []string {
+func RenderMCPList(cfg *config.Config, opts RenderOptions) []string {
 	t := styles.CurrentTheme()
 	mcpList := []string{}
 
@@ -33,7 +33,7 @@ func RenderMCPList(opts RenderOptions) []string {
 		mcpList = append(mcpList, section, "")
 	}
 
-	mcps := config.Get().MCP.Sorted()
+	mcps := cfg.MCP.Sorted()
 	if len(mcps) == 0 {
 		mcpList = append(mcpList, t.S().Base.Foreground(t.Border).Render("None"))
 		return mcpList
@@ -99,13 +99,13 @@ func RenderMCPList(opts RenderOptions) []string {
 }
 
 // RenderMCPBlock renders a complete MCP block with optional truncation indicator.
-func RenderMCPBlock(opts RenderOptions, showTruncationIndicator bool) string {
+func RenderMCPBlock(cfg *config.Config, opts RenderOptions, showTruncationIndicator bool) string {
 	t := styles.CurrentTheme()
-	mcpList := RenderMCPList(opts)
+	mcpList := RenderMCPList(cfg, opts)
 
 	// Add truncation indicator if needed
 	if showTruncationIndicator && opts.MaxItems > 0 {
-		mcps := config.Get().MCP.Sorted()
+		mcps := cfg.MCP.Sorted()
 		if len(mcps) > opts.MaxItems {
 			remaining := len(mcps) - opts.MaxItems
 			if remaining == 1 {

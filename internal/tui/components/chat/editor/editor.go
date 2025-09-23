@@ -16,7 +16,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/key"
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/crush/internal/app"
+	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/session"
@@ -53,7 +53,7 @@ type editorCmp struct {
 	width              int
 	height             int
 	x, y               int
-	app                *app.App
+	app                *client.Client
 	session            session.Session
 	textarea           *textarea.Model
 	attachments        []message.Attachment
@@ -211,7 +211,8 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case commands.OpenExternalEditorMsg:
-		if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
+		info, err := m.app.GetAgentSessionInfo(context.TODO(), m.session.ID)
+		if err == nil && info.IsBusy {
 			return m, util.ReportWarn("Agent is working, please wait...")
 		}
 		return m, m.openEditor(m.textarea.Value())
@@ -297,7 +298,8 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if key.Matches(msg, m.keyMap.OpenEditor) {
-			if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
+			info, err := m.app.GetAgentSessionInfo(context.TODO(), m.session.ID)
+			if err == nil && info.IsBusy {
 				return m, util.ReportWarn("Agent is working, please wait...")
 			}
 			return m, m.openEditor(m.textarea.Value())
@@ -365,7 +367,8 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *editorCmp) setEditorPrompt() {
-	if m.app.Permissions.SkipRequests() {
+	skip, err := m.app.GetPermissionsSkipRequests(context.TODO())
+	if err == nil && skip {
 		m.textarea.SetPromptFunc(4, yoloPromptFunc)
 		return
 	}
@@ -415,12 +418,14 @@ func (m *editorCmp) randomizePlaceholders() {
 func (m *editorCmp) View() string {
 	t := styles.CurrentTheme()
 	// Update placeholder
-	if m.app.CoderAgent != nil && m.app.CoderAgent.IsBusy() {
+	info, err := m.app.GetAgentInfo(context.TODO())
+	if err == nil && info.IsBusy {
 		m.textarea.Placeholder = m.workingPlaceholder
 	} else {
 		m.textarea.Placeholder = m.readyPlaceholder
 	}
-	if m.app.Permissions.SkipRequests() {
+	skip, err := m.app.GetPermissionsSkipRequests(context.TODO())
+	if err == nil && skip {
 		m.textarea.Placeholder = "Yolo mode!"
 	}
 	if len(m.attachments) == 0 {
@@ -563,7 +568,7 @@ func yoloPromptFunc(info textarea.PromptInfo) string {
 	return fmt.Sprintf("%s ", t.YoloDotsBlurred)
 }
 
-func New(app *app.App) Editor {
+func New(app *client.Client) Editor {
 	t := styles.CurrentTheme()
 	ta := textarea.New()
 	ta.SetStyles(t.S().TextArea)

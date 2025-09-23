@@ -57,6 +57,8 @@ type commandDialogCmp struct {
 	commandType  int       // SystemCommands or UserCommands
 	userCommands []Command // User-defined commands
 	sessionID    string    // Current session ID
+
+	cfg *config.Config
 }
 
 type (
@@ -76,7 +78,7 @@ type (
 	}
 )
 
-func NewCommandDialog(sessionID string) CommandsDialog {
+func NewCommandDialog(cfg *config.Config, sessionID string) CommandsDialog {
 	keyMap := DefaultCommandsDialogKeyMap()
 	listKeyMap := list.DefaultKeyMap()
 	listKeyMap.Down.SetEnabled(false)
@@ -104,11 +106,12 @@ func NewCommandDialog(sessionID string) CommandsDialog {
 		help:        help,
 		commandType: SystemCommands,
 		sessionID:   sessionID,
+		cfg:         cfg,
 	}
 }
 
 func (c *commandDialogCmp) Init() tea.Cmd {
-	commands, err := LoadCustomCommands()
+	commands, err := LoadCustomCommands(c.cfg)
 	if err != nil {
 		return util.ReportError(err)
 	}
@@ -302,12 +305,11 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 	}
 
 	// Add reasoning toggle for models that support it
-	cfg := config.Get()
-	if agentCfg, ok := cfg.Agents["coder"]; ok {
-		providerCfg := cfg.GetProviderForModel(agentCfg.Model)
-		model := cfg.GetModelByType(agentCfg.Model)
+	if agentCfg, ok := c.cfg.Agents["coder"]; ok {
+		providerCfg := c.cfg.GetProviderForModel(agentCfg.Model)
+		model := c.cfg.GetModelByType(agentCfg.Model)
 		if providerCfg != nil && model != nil && model.CanReason {
-			selectedModel := cfg.Models[agentCfg.Model]
+			selectedModel := c.cfg.Models[agentCfg.Model]
 
 			// Anthropic models: thinking toggle
 			if providerCfg.Type == catwalk.TypeAnthropic {
@@ -350,8 +352,8 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 		})
 	}
 	if c.sessionID != "" {
-		agentCfg := config.Get().Agents["coder"]
-		model := config.Get().GetModelByType(agentCfg.Model)
+		agentCfg := c.cfg.Agents["coder"]
+		model := c.cfg.GetModelByType(agentCfg.Model)
 		if model.SupportsImages {
 			commands = append(commands, Command{
 				ID:          "file_picker",

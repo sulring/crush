@@ -8,13 +8,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
+	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/diff"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
-	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/tui/components/chat"
@@ -69,16 +69,16 @@ type sidebarCmp struct {
 	session       session.Session
 	logo          string
 	cwd           string
-	lspClients    *csync.Map[string, *lsp.Client]
+	client        *client.Client
 	compactMode   bool
-	history       history.Service
 	files         *csync.Map[string, SessionFile]
+	cfg           *config.Config
 }
 
-func New(history history.Service, lspClients *csync.Map[string, *lsp.Client], compact bool) Sidebar {
+func New(c *client.Client, cfg *config.Config, compact bool) Sidebar {
 	return &sidebarCmp{
-		lspClients:  lspClients,
-		history:     history,
+		client:      c,
+		cfg:         cfg,
 		compactMode: compact,
 		files:       csync.NewMap[string, SessionFile](),
 	}
@@ -194,7 +194,7 @@ func (m *sidebarCmp) handleFileHistoryEvent(event pubsub.Event[history.File]) te
 			before, _ := fsext.ToUnixLineEndings(existing.History.initialVersion.Content)
 			after, _ := fsext.ToUnixLineEndings(existing.History.latestVersion.Content)
 			path := existing.History.initialVersion.Path
-			cwd := config.Get().WorkingDir()
+			cwd := m.cfg.WorkingDir()
 			path = strings.TrimPrefix(path, cwd)
 			_, additions, deletions := diff.GenerateDiff(before, after, path)
 			existing.Additions = additions
@@ -221,7 +221,7 @@ func (m *sidebarCmp) handleFileHistoryEvent(event pubsub.Event[history.File]) te
 }
 
 func (m *sidebarCmp) loadSessionFiles() tea.Msg {
-	files, err := m.history.ListBySession(context.Background(), m.session.ID)
+	files, err := m.client.ListSessionHistoryFiles(context.Background(), m.session.ID)
 	if err != nil {
 		return util.InfoMsg{
 			Type: util.InfoTypeError,
@@ -247,7 +247,7 @@ func (m *sidebarCmp) loadSessionFiles() tea.Msg {
 
 	sessionFiles := make([]SessionFile, 0, len(fileMap))
 	for path, fh := range fileMap {
-		cwd := config.Get().WorkingDir()
+		cwd := m.cfg.WorkingDir()
 		path = strings.TrimPrefix(path, cwd)
 		before, _ := fsext.ToUnixLineEndings(fh.initialVersion.Content)
 		after, _ := fsext.ToUnixLineEndings(fh.latestVersion.Content)
@@ -267,7 +267,7 @@ func (m *sidebarCmp) loadSessionFiles() tea.Msg {
 
 func (m *sidebarCmp) SetSize(width, height int) tea.Cmd {
 	m.logo = m.logoBlock()
-	m.cwd = cwd()
+	m.cwd = cwd(m.cfg)
 	m.width = width
 	m.height = height
 	return nil
@@ -406,7 +406,7 @@ func (m *sidebarCmp) filesBlockCompact(maxWidth int) string {
 		maxItems = min(maxItems, availableHeight)
 	}
 
-	return files.RenderFileBlock(fileSlice, files.RenderOptions{
+	return files.RenderFileBlock(m.cfg, fileSlice, files.RenderOptions{
 		MaxWidth:    maxWidth,
 		MaxItems:    maxItems,
 		ShowSection: true,
@@ -417,14 +417,14 @@ func (m *sidebarCmp) filesBlockCompact(maxWidth int) string {
 // lspBlockCompact renders the LSP block with limited width and height for horizontal layout
 func (m *sidebarCmp) lspBlockCompact(maxWidth int) string {
 	// Limit items for horizontal layout
-	lspConfigs := config.Get().LSP.Sorted()
+	lspConfigs := m.cfg.LSP.Sorted()
 	maxItems := min(5, len(lspConfigs))
 	availableHeight := m.height - 8
 	if availableHeight > 0 {
 		maxItems = min(maxItems, availableHeight)
 	}
 
-	return lspcomponent.RenderLSPBlock(m.lspClients, lspcomponent.RenderOptions{
+	return lspcomponent.RenderLSPBlock(m.client, m.cfg, lspcomponent.RenderOptions{
 		MaxWidth:    maxWidth,
 		MaxItems:    maxItems,
 		ShowSection: true,
@@ -435,13 +435,13 @@ func (m *sidebarCmp) lspBlockCompact(maxWidth int) string {
 // mcpBlockCompact renders the MCP block with limited width and height for horizontal layout
 func (m *sidebarCmp) mcpBlockCompact(maxWidth int) string {
 	// Limit items for horizontal layout
-	maxItems := min(5, len(config.Get().MCP.Sorted()))
+	maxItems := min(5, len(m.cfg.MCP.Sorted()))
 	availableHeight := m.height - 8
 	if availableHeight > 0 {
 		maxItems = min(maxItems, availableHeight)
 	}
 
-	return mcp.RenderMCPBlock(mcp.RenderOptions{
+	return mcp.RenderMCPBlock(m.cfg, mcp.RenderOptions{
 		MaxWidth:    maxWidth,
 		MaxItems:    maxItems,
 		ShowSection: true,
@@ -469,7 +469,7 @@ func (m *sidebarCmp) filesBlock() string {
 	maxFiles, _, _ := m.getDynamicLimits()
 	maxFiles = min(len(fileSlice), maxFiles)
 
-	return files.RenderFileBlock(fileSlice, files.RenderOptions{
+	return files.RenderFileBlock(m.cfg, fileSlice, files.RenderOptions{
 		MaxWidth:    m.getMaxWidth(),
 		MaxItems:    maxFiles,
 		ShowSection: true,
@@ -480,10 +480,10 @@ func (m *sidebarCmp) filesBlock() string {
 func (m *sidebarCmp) lspBlock() string {
 	// Limit the number of LSPs shown
 	_, maxLSPs, _ := m.getDynamicLimits()
-	lspConfigs := config.Get().LSP.Sorted()
+	lspConfigs := m.cfg.LSP.Sorted()
 	maxLSPs = min(len(lspConfigs), maxLSPs)
 
-	return lspcomponent.RenderLSPBlock(m.lspClients, lspcomponent.RenderOptions{
+	return lspcomponent.RenderLSPBlock(m.client, m.cfg, lspcomponent.RenderOptions{
 		MaxWidth:    m.getMaxWidth(),
 		MaxItems:    maxLSPs,
 		ShowSection: true,
@@ -494,10 +494,10 @@ func (m *sidebarCmp) lspBlock() string {
 func (m *sidebarCmp) mcpBlock() string {
 	// Limit the number of MCPs shown
 	_, _, maxMCPs := m.getDynamicLimits()
-	mcps := config.Get().MCP.Sorted()
+	mcps := m.cfg.MCP.Sorted()
 	maxMCPs = min(len(mcps), maxMCPs)
 
-	return mcp.RenderMCPBlock(mcp.RenderOptions{
+	return mcp.RenderMCPBlock(m.cfg, mcp.RenderOptions{
 		MaxWidth:    m.getMaxWidth(),
 		MaxItems:    maxMCPs,
 		ShowSection: true,
@@ -544,13 +544,15 @@ func formatTokensAndCost(tokens, contextWindow int64, cost float64) string {
 }
 
 func (s *sidebarCmp) currentModelBlock() string {
-	cfg := config.Get()
-	agentCfg := cfg.Agents["coder"]
+	agentCfg := s.cfg.Agents["coder"]
 
-	selectedModel := cfg.Models[agentCfg.Model]
+	selectedModel := s.cfg.Models[agentCfg.Model]
 
-	model := config.Get().GetModelByType(agentCfg.Model)
-	modelProvider := config.Get().GetProviderForModel(agentCfg.Model)
+	model := s.cfg.GetModelByType(agentCfg.Model)
+	if model == nil {
+		return "No model found"
+	}
+	modelProvider := s.cfg.GetProviderForModel(agentCfg.Model)
 
 	t := styles.CurrentTheme()
 
@@ -606,8 +608,8 @@ func (m *sidebarCmp) SetCompactMode(compact bool) {
 	m.compactMode = compact
 }
 
-func cwd() string {
-	cwd := config.Get().WorkingDir()
+func cwd(cfg *config.Config) string {
+	cwd := cfg.WorkingDir()
 	t := styles.CurrentTheme()
 	return t.S().Muted.Render(home.Short(cwd))
 }

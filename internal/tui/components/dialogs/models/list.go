@@ -19,9 +19,10 @@ type ModelListComponent struct {
 	list      listModel
 	modelType int
 	providers []catwalk.Provider
+	cfg       *config.Config
 }
 
-func NewModelListComponent(keyMap list.KeyMap, inputPlaceholder string, shouldResize bool) *ModelListComponent {
+func NewModelListComponent(cfg *config.Config, keyMap list.KeyMap, inputPlaceholder string, shouldResize bool) *ModelListComponent {
 	t := styles.CurrentTheme()
 	inputStyle := t.S().Base.PaddingLeft(1).PaddingBottom(1)
 	options := []list.ListOption{
@@ -43,14 +44,14 @@ func NewModelListComponent(keyMap list.KeyMap, inputPlaceholder string, shouldRe
 	return &ModelListComponent{
 		list:      modelList,
 		modelType: LargeModelType,
+		cfg:       cfg,
 	}
 }
 
 func (m *ModelListComponent) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	if len(m.providers) == 0 {
-		cfg := config.Get()
-		providers, err := config.Providers(cfg)
+		providers, err := config.Providers(m.cfg)
 		filteredProviders := []catwalk.Provider{}
 		for _, p := range providers {
 			hasAPIKeyEnv := strings.HasPrefix(p.APIKey, "$")
@@ -104,12 +105,11 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 	// first none section
 	selectedItemID := ""
 
-	cfg := config.Get()
 	var currentModel config.SelectedModel
 	if m.modelType == LargeModelType {
-		currentModel = cfg.Models[config.SelectedModelTypeLarge]
+		currentModel = m.cfg.Models[config.SelectedModelTypeLarge]
 	} else {
-		currentModel = cfg.Models[config.SelectedModelTypeSmall]
+		currentModel = m.cfg.Models[config.SelectedModelTypeSmall]
 	}
 
 	configuredIcon := t.S().Base.Foreground(t.Success).Render(styles.CheckIcon)
@@ -120,11 +120,11 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 
 	// First, add any configured providers that are not in the known providers list
 	// These should appear at the top of the list
-	knownProviders, err := config.Providers(cfg)
+	knownProviders, err := config.Providers(m.cfg)
 	if err != nil {
 		return util.ReportError(err)
 	}
-	for providerID, providerConfig := range cfg.Providers.Seq2() {
+	for providerID, providerConfig := range m.cfg.Providers.Seq2() {
 		if providerConfig.Disable {
 			continue
 		}
@@ -196,7 +196,7 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 		}
 
 		// Check if this provider is configured and not disabled
-		if providerConfig, exists := cfg.Providers.Get(string(provider.ID)); exists && providerConfig.Disable {
+		if providerConfig, exists := m.cfg.Providers.Get(string(provider.ID)); exists && providerConfig.Disable {
 			continue
 		}
 
@@ -206,7 +206,7 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 		}
 
 		section := list.NewItemSection(name)
-		if _, ok := cfg.Providers.Get(string(provider.ID)); ok {
+		if _, ok := m.cfg.Providers.Get(string(provider.ID)); ok {
 			section.SetInfo(configured)
 		}
 		group := list.Group[list.CompletionItem[ModelOption]]{

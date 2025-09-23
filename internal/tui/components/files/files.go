@@ -40,7 +40,7 @@ type RenderOptions struct {
 }
 
 // RenderFileList renders a list of file status items with the given options.
-func RenderFileList(fileSlice []SessionFile, opts RenderOptions) []string {
+func RenderFileList(cfg *config.Config, fileSlice []SessionFile, opts RenderOptions) []string {
 	t := styles.CurrentTheme()
 	fileList := []string{}
 
@@ -90,7 +90,7 @@ func RenderFileList(fileSlice []SessionFile, opts RenderOptions) []string {
 		}
 
 		extraContent := strings.Join(statusParts, " ")
-		cwd := config.Get().WorkingDir() + string(os.PathSeparator)
+		cwd := cfg.WorkingDir() + string(os.PathSeparator)
 		filePath := file.FilePath
 		if rel, err := filepath.Rel(cwd, filePath); err == nil {
 			filePath = rel
@@ -114,9 +114,9 @@ func RenderFileList(fileSlice []SessionFile, opts RenderOptions) []string {
 }
 
 // RenderFileBlock renders a complete file block with optional truncation indicator.
-func RenderFileBlock(fileSlice []SessionFile, opts RenderOptions, showTruncationIndicator bool) string {
+func RenderFileBlock(cfg *config.Config, fileSlice []SessionFile, opts RenderOptions, showTruncationIndicator bool) string {
 	t := styles.CurrentTheme()
-	fileList := RenderFileList(fileSlice, opts)
+	fileList := RenderFileList(cfg, fileSlice, opts)
 
 	// Add truncation indicator if needed
 	if showTruncationIndicator && opts.MaxItems > 0 {

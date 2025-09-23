@@ -39,6 +39,8 @@ type reasoningDialogCmp struct {
 	effortList listModel
 	keyMap     ReasoningDialogKeyMap
 	help       help.Model
+
+	cfg *config.Config
 }
 
 type ReasoningEffortSelectedMsg struct {
@@ -84,7 +86,7 @@ func (k ReasoningDialogKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
-func NewReasoningDialog() ReasoningDialog {
+func NewReasoningDialog(cfg *config.Config) ReasoningDialog {
 	keyMap := DefaultReasoningDialogKeyMap()
 	listKeyMap := list.DefaultKeyMap()
 	listKeyMap.Down.SetEnabled(false)
@@ -111,6 +113,7 @@ func NewReasoningDialog() ReasoningDialog {
 		width:      defaultWidth,
 		keyMap:     keyMap,
 		help:       help,
+		cfg:        cfg,
 	}
 }
 
@@ -119,10 +122,9 @@ func (r *reasoningDialogCmp) Init() tea.Cmd {
 }
 
 func (r *reasoningDialogCmp) populateEffortOptions() tea.Cmd {
-	cfg := config.Get()
-	if agentCfg, ok := cfg.Agents["coder"]; ok {
-		selectedModel := cfg.Models[agentCfg.Model]
-		model := cfg.GetModelByType(agentCfg.Model)
+	if agentCfg, ok := r.cfg.Agents["coder"]; ok {
+		selectedModel := r.cfg.Models[agentCfg.Model]
+		model := r.cfg.GetModelByType(agentCfg.Model)
 
 		// Get current reasoning effort
 		currentEffort := selectedModel.ReasoningEffort

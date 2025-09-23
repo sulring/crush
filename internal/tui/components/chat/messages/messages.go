@@ -57,6 +57,8 @@ type messageCmp struct {
 
 	// Thinking viewport for displaying reasoning content
 	thinkingViewport viewport.Model
+
+	cfg *config.Config
 }
 
 var focusedMessageBorder = lipgloss.Border{
@@ -64,7 +66,7 @@ var focusedMessageBorder = lipgloss.Border{
 }
 
 // NewMessageCmp creates a new message component with the given message and options
-func NewMessageCmp(msg message.Message) MessageCmp {
+func NewMessageCmp(cfg *config.Config, msg message.Message) MessageCmp {
 	t := styles.CurrentTheme()
 
 	thinkingViewport := viewport.New()
@@ -72,6 +74,7 @@ func NewMessageCmp(msg message.Message) MessageCmp {
 	thinkingViewport.KeyMap = viewport.KeyMap{}
 
 	m := &messageCmp{
+		cfg:     cfg,
 		message: msg,
 		anim: anim.New(anim.Settings{
 			Size:        15,
@@ -363,6 +366,7 @@ type assistantSectionModel struct {
 	id                  string
 	message             message.Message
 	lastUserMessageTime time.Time
+	cfg                 *config.Config
 }
 
 // ID implements AssistantSection.
@@ -370,12 +374,13 @@ func (m *assistantSectionModel) ID() string {
 	return m.id
 }
 
-func NewAssistantSection(message message.Message, lastUserMessageTime time.Time) AssistantSection {
+func NewAssistantSection(cfg *config.Config, message message.Message, lastUserMessageTime time.Time) AssistantSection {
 	return &assistantSectionModel{
 		width:               0,
 		id:                  uuid.NewString(),
 		message:             message,
 		lastUserMessageTime: lastUserMessageTime,
+		cfg:                 cfg,
 	}
 }
 
@@ -394,7 +399,7 @@ func (m *assistantSectionModel) View() string {
 	duration := finishTime.Sub(m.lastUserMessageTime)
 	infoMsg := t.S().Subtle.Render(duration.String())
 	icon := t.S().Subtle.Render(styles.ModelIcon)
-	model := config.Get().GetModel(m.message.Provider, m.message.Model)
+	model := m.cfg.GetModel(m.message.Provider, m.message.Model)
 	if model == nil {
 		// This means the model is not configured anymore
 		model = &catwalk.Model{

@@ -67,9 +67,11 @@ type modelDialogCmp struct {
 	selectedModelType config.SelectedModelType
 	isAPIKeyValid     bool
 	apiKeyValue       string
+
+	cfg *config.Config
 }
 
-func NewModelDialogCmp() ModelDialog {
+func NewModelDialogCmp(cfg *config.Config) ModelDialog {
 	keyMap := DefaultKeyMap()
 
 	listKeyMap := list.DefaultKeyMap()
@@ -79,7 +81,7 @@ func NewModelDialogCmp() ModelDialog {
 	listKeyMap.UpOneItem = keyMap.Previous
 
 	t := styles.CurrentTheme()
-	modelList := NewModelListComponent(listKeyMap, largeModelInputPlaceholder, true)
+	modelList := NewModelListComponent(cfg, listKeyMap, largeModelInputPlaceholder, true)
 	apiKeyInput := NewAPIKeyInput()
 	apiKeyInput.SetShowTitle(false)
 	help := help.New()
@@ -91,6 +93,7 @@ func NewModelDialogCmp() ModelDialog {
 		width:       defaultWidth,
 		keyMap:      DefaultKeyMap(),
 		help:        help,
+		cfg:         cfg,
 	}
 }
 
@@ -136,7 +139,7 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}),
 					func() tea.Msg {
 						start := time.Now()
-						err := providerConfig.TestConnection(config.Get().Resolver())
+						err := providerConfig.TestConnection(m.cfg.Resolver())
 						// intentionally wait for at least 750ms to make sure the user sees the spinner
 						elapsed := time.Since(start)
 						if elapsed < 750*time.Millisecond {
@@ -344,16 +347,14 @@ func (m *modelDialogCmp) modelTypeRadio() string {
 }
 
 func (m *modelDialogCmp) isProviderConfigured(providerID string) bool {
-	cfg := config.Get()
-	if _, ok := cfg.Providers.Get(providerID); ok {
+	if _, ok := m.cfg.Providers.Get(providerID); ok {
 		return true
 	}
 	return false
 }
 
 func (m *modelDialogCmp) getProvider(providerID catwalk.InferenceProvider) (*catwalk.Provider, error) {
-	cfg := config.Get()
-	providers, err := config.Providers(cfg)
+	providers, err := config.Providers(m.cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -370,8 +371,7 @@ func (m *modelDialogCmp) saveAPIKeyAndContinue(apiKey string) tea.Cmd {
 		return util.ReportError(fmt.Errorf("no model selected"))
 	}
 
-	cfg := config.Get()
-	err := cfg.SetProviderAPIKey(string(m.selectedModel.Provider.ID), apiKey)
+	err := m.cfg.SetProviderAPIKey(string(m.selectedModel.Provider.ID), apiKey)
 	if err != nil {
 		return util.ReportError(fmt.Errorf("failed to save API key: %w", err))
 	}

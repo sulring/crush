@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 
+	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/llm/agent"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs"
@@ -29,7 +30,7 @@ type compactDialogCmp struct {
 	sessionID       string
 	state           compactState
 	progress        string
-	agent           agent.Service
+	client          *client.Client
 	noAsk           bool // If true, skip confirmation dialog
 }
 
@@ -42,13 +43,13 @@ const (
 )
 
 // NewCompactDialogCmp creates a new session compact dialog
-func NewCompactDialogCmp(agent agent.Service, sessionID string, noAsk bool) CompactDialog {
+func NewCompactDialogCmp(c *client.Client, sessionID string, noAsk bool) CompactDialog {
 	return &compactDialogCmp{
 		sessionID: sessionID,
 		keyMap:    DefaultKeyMap(),
 		state:     stateConfirm,
 		selected:  0,
-		agent:     agent,
+		client:    c,
 		noAsk:     noAsk,
 	}
 }
@@ -133,7 +134,7 @@ func (c *compactDialogCmp) startCompaction() tea.Cmd {
 	c.state = stateCompacting
 	c.progress = "Starting summarization..."
 	return func() tea.Msg {
-		err := c.agent.Summarize(context.Background(), c.sessionID)
+		err := c.client.AgentSummarizeSession(context.Background(), c.sessionID)
 		if err != nil {
 			c.state = stateError
 			c.progress = "Error: " + err.Error()

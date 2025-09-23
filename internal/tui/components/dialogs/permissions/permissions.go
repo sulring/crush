@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/llm/tools"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs"
 	"github.com/charmbracelet/crush/internal/tui/styles"
@@ -19,13 +20,13 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-type PermissionAction string
+type PermissionAction = proto.PermissionAction
 
 // Permission responses
 const (
-	PermissionAllow           PermissionAction = "allow"
-	PermissionAllowForSession PermissionAction = "allow_session"
-	PermissionDeny            PermissionAction = "deny"
+	PermissionAllow           = proto.PermissionAllow
+	PermissionAllowForSession = proto.PermissionAllowForSession
+	PermissionDeny            = proto.PermissionDeny
 
 	PermissionsDialogID dialogs.DialogID = "permissions"
 )
