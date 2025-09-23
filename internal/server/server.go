@@ -72,8 +72,9 @@ type Server struct {
 	// Addr can be a TCP address, a Unix socket path, or a Windows named pipe.
 	Addr string
 
-	h  *http.Server
-	ln net.Listener
+	h   *http.Server
+	ln  net.Listener
+	ctx context.Context
 
 	// instances is a map of running applications managed by the server.
 	instances *csync.Map[string, *Instance]
@@ -106,6 +107,7 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	s.Addr = address
 	s.cfg = cfg
 	s.instances = csync.NewMap[string, *Instance]()
+	s.ctx = context.Background()
 
 	var p http.Protocols
 	p.SetHTTP1(true)
@@ -116,6 +118,7 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	mux.HandleFunc("GET /v1/instances", c.handleGetInstances)
 	mux.HandleFunc("POST /v1/instances", c.handlePostInstances)
 	mux.HandleFunc("DELETE /v1/instances", c.handleDeleteInstances)
+	mux.HandleFunc("GET /v1/instances/{id}/config", c.handleGetInstanceConfig)
 	mux.HandleFunc("GET /v1/instances/{id}/events", c.handleGetInstanceEvents)
 	mux.HandleFunc("GET /v1/instances/{id}/sessions", c.handleGetInstanceSessions)
 	mux.HandleFunc("POST /v1/instances/{id}/sessions", c.handlePostInstanceSessions)
@@ -124,10 +127,14 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	mux.HandleFunc("GET /v1/instances/{id}/sessions/{sid}/messages", c.handleGetInstanceSessionMessages)
 	mux.HandleFunc("GET /v1/instances/{id}/lsps", c.handleGetInstanceLSPs)
 	mux.HandleFunc("GET /v1/instances/{id}/lsps/{lsp}/diagnostics", c.handleGetInstanceLSPDiagnostics)
+	mux.HandleFunc("GET /v1/instances/{id}/permissions/skip", c.handleGetInstancePermissionsSkip)
+	mux.HandleFunc("POST /v1/instances/{id}/permissions/skip", c.handlePostInstancePermissionsSkip)
+	mux.HandleFunc("POST /v1/instances/{id}/permissions/grant", c.handlePostInstancePermissionsGrant)
 	mux.HandleFunc("GET /v1/instances/{id}/agent", c.handleGetInstanceAgent)
 	mux.HandleFunc("POST /v1/instances/{id}/agent", c.handlePostInstanceAgent)
 	mux.HandleFunc("POST /v1/instances/{id}/agent/init", c.handlePostInstanceAgentInit)
 	mux.HandleFunc("POST /v1/instances/{id}/agent/update", c.handlePostInstanceAgentUpdate)
+	mux.HandleFunc("GET /v1/instances/{id}/agent/sessions/{sid}", c.handleGetInstanceAgentSession)
 	mux.HandleFunc("POST /v1/instances/{id}/agent/sessions/{sid}/cancel", c.handlePostInstanceAgentSessionCancel)
 	mux.HandleFunc("GET /v1/instances/{id}/agent/sessions/{sid}/prompts/queued", c.handleGetInstanceAgentSessionPromptQueued)
 	mux.HandleFunc("POST /v1/instances/{id}/agent/sessions/{sid}/prompts/clear", c.handlePostInstanceAgentSessionPromptClear)
@@ -175,6 +182,16 @@ func (s *Server) Close() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	defer func() { s.closeListener() }()
 	return s.h.Shutdown(ctx)
+}
+
+func (s *Server) logDebug(r *http.Request, msg string, args ...any) {
+	if s.logger != nil {
+		s.logger.With(
+			slog.String("method", r.Method),
+			slog.String("url", r.URL.String()),
+			slog.String("remote_addr", r.RemoteAddr),
+		).Debug(msg, args...)
+	}
 }
 
 func (s *Server) logError(r *http.Request, msg string, args ...any) {
