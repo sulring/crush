@@ -2,6 +2,7 @@ package message
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"slices"
 	"time"
 
@@ -140,6 +141,51 @@ type Message struct {
 	Provider  string        `json:"provider"`
 	CreatedAt int64         `json:"created_at"`
 	UpdatedAt int64         `json:"updated_at"`
+}
+
+// MarshalJSON implements the [json.Marshaler] interface.
+func (m Message) MarshalJSON() ([]byte, error) {
+	// We need to handle the Parts specially since they're ContentPart interfaces
+	// which can't be directly marshaled by the standard JSON package.
+	parts, err := marshallParts(m.Parts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an alias to avoid infinite recursion
+	type Alias Message
+	return json.Marshal(&struct {
+		Parts json.RawMessage `json:"parts"`
+		*Alias
+	}{
+		Parts: json.RawMessage(parts),
+		Alias: (*Alias)(&m),
+	})
+}
+
+// UnmarshalJSON implements the [json.Unmarshaler] interface.
+func (m *Message) UnmarshalJSON(data []byte) error {
+	// Create an alias to avoid infinite recursion
+	type Alias Message
+	aux := &struct {
+		Parts json.RawMessage `json:"parts"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Unmarshal the parts using our custom function
+	parts, err := unmarshallParts([]byte(aux.Parts))
+	if err != nil {
+		return err
+	}
+
+	m.Parts = parts
+	return nil
 }
 
 func (m *Message) Content() TextContent {
