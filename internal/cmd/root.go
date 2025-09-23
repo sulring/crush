@@ -12,12 +12,15 @@ import (
 	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/proto"
+	"github.com/charmbracelet/crush/internal/server"
 	"github.com/charmbracelet/crush/internal/tui"
 	"github.com/charmbracelet/crush/internal/version"
 	"github.com/charmbracelet/fang"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
+
+var clientHost string
 
 func init() {
 	rootCmd.PersistentFlags().StringP("cwd", "c", "", "Current working directory")
@@ -26,6 +29,8 @@ func init() {
 
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
+
+	rootCmd.Flags().StringVar(&clientHost, "host", server.DefaultAddr(), "Connect to a specific crush server host (for advanced users)")
 
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(updateProvidersCmd)
@@ -65,7 +70,10 @@ crush -y
 			return err
 		}
 
-		m := tui.New(c)
+		m, err := tui.New(c)
+		if err != nil {
+			return fmt.Errorf("failed to create TUI model: %v", err)
+		}
 
 		defer func() { c.DeleteInstance(cmd.Context(), c.ID()) }()
 
@@ -138,12 +146,13 @@ func setupApp(cmd *cobra.Command) (*client.Client, error) {
 		return nil, err
 	}
 
-	c, err := client.DefaultClient(cwd)
+	c, err := client.NewClient(cwd, "unix", clientHost)
 	if err != nil {
 		return nil, err
 	}
 
 	if _, err := c.CreateInstance(ctx, proto.Instance{
+		Path:    cwd,
 		DataDir: dataDir,
 		Debug:   debug,
 		YOLO:    yolo,

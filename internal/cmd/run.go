@@ -26,13 +26,18 @@ crush run -q "Generate a README for this project"
 	RunE: func(cmd *cobra.Command, args []string) error {
 		quiet, _ := cmd.Flags().GetBool("quiet")
 
-		app, err := setupApp(cmd)
+		c, err := setupApp(cmd)
 		if err != nil {
 			return err
 		}
-		defer app.Shutdown()
+		defer func() { c.DeleteInstance(cmd.Context(), c.ID()) }()
 
-		if !app.Config().IsConfigured() {
+		cfg, err := c.GetConfig(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("failed to get config: %v", err)
+		}
+
+		if !cfg.IsConfigured() {
 			return fmt.Errorf("no providers configured - please run 'crush' to set up a provider interactively")
 		}
 
@@ -49,7 +54,10 @@ crush run -q "Generate a README for this project"
 		}
 
 		// Run non-interactive flow using the App method
-		return app.RunNonInteractive(cmd.Context(), prompt, quiet)
+		// return c.RunNonInteractive(cmd.Context(), prompt, quiet)
+		// TODO: implement non-interactive run
+		_ = quiet
+		return nil
 	},
 }
 

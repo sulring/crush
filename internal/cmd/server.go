@@ -15,6 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var serverHost string
+
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Start the Crush server",
@@ -41,7 +43,7 @@ var serverCmd = &cobra.Command{
 			slog.SetLogLoggerLevel(slog.LevelDebug)
 		}
 
-		srv := server.NewServer(cfg, "unix", server.DefaultAddr())
+		srv := server.NewServer(cfg, "unix", serverHost)
 		srv.SetLogger(slog.Default())
 		slog.Info("Starting Crush server...", "addr", srv.Addr)
 
@@ -81,5 +83,6 @@ var serverCmd = &cobra.Command{
 }
 
 func init() {
+	serverCmd.Flags().StringVar(&serverHost, "host", server.DefaultAddr(), "Server host (TCP or Unix socket)")
 	rootCmd.AddCommand(serverCmd)
 }
