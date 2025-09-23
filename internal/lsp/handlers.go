@@ -79,9 +79,9 @@ func notifyFileWatchRegistration(id string, watchers []protocol.FileSystemWatche
 }
 
 // HandleServerMessage handles server messages
-func HandleServerMessage(_ context.Context, method string, params json.RawMessage) {
-	cfg := config.Get()
-	if !cfg.Options.DebugLSP {
+func HandleServerMessage(ctx context.Context, method string, params json.RawMessage) {
+	cfg, ok := config.FromContext(ctx)
+	if !ok || !cfg.Options.DebugLSP {
 		return
 	}
 

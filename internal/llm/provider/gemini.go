@@ -44,7 +44,7 @@ func createGeminiClient(opts providerClientOptions) (*genai.Client, error) {
 		APIKey:  opts.apiKey,
 		Backend: genai.BackendGeminiAPI,
 	}
-	if config.Get().Options.Debug {
+	if opts.cfg.Options.Debug {
 		cc.HTTPClient = log.NewHTTPClient()
 	}
 	client, err := genai.NewClient(context.Background(), cc)
@@ -178,7 +178,7 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 	// Convert messages
 	geminiMessages := g.convertMessages(messages)
 	model := g.providerOptions.model(g.providerOptions.modelType)
-	cfg := config.Get()
+	cfg := g.providerOptions.cfg
 
 	modelConfig := cfg.Models[config.SelectedModelTypeLarge]
 	if g.providerOptions.modelType == config.SelectedModelTypeSmall {
@@ -274,7 +274,7 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 	geminiMessages := g.convertMessages(messages)
 
 	model := g.providerOptions.model(g.providerOptions.modelType)
-	cfg := config.Get()
+	cfg := g.providerOptions.cfg
 
 	modelConfig := cfg.Models[config.SelectedModelTypeLarge]
 	if g.providerOptions.modelType == config.SelectedModelTypeSmall {
@@ -433,7 +433,7 @@ func (g *geminiClient) shouldRetry(attempts int, err error) (bool, int64, error)
 
 	// Check for token expiration (401 Unauthorized)
 	if contains(errMsg, "unauthorized", "invalid api key", "api key expired") {
-		g.providerOptions.apiKey, err = config.Get().Resolve(g.providerOptions.config.APIKey)
+		g.providerOptions.apiKey, err = g.providerOptions.cfg.Resolve(g.providerOptions.config.APIKey)
 		if err != nil {
 			return false, 0, fmt.Errorf("failed to resolve API key: %w", err)
 		}

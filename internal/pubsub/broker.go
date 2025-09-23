@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 )
 
@@ -113,6 +114,7 @@ func (b *Broker[T]) Publish(t EventType, payload T) {
 		default:
 			// Channel is full, subscriber is slow - skip this event
 			// This prevents blocking the publisher
+			slog.Warn("Skipping event for slow subscriber", "event_type", t)
 		}
 	}
 }

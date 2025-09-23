@@ -1,14 +1,32 @@
-package message
+package proto
 
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"time"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 )
 
+type CreateMessageParams struct {
+	Role     MessageRole   `json:"role"`
+	Parts    []ContentPart `json:"parts"`
+	Model    string        `json:"model"`
+	Provider string        `json:"provider,omitempty"`
+}
+
+type Message struct {
+	ID        string        `json:"id"`
+	Role      MessageRole   `json:"role"`
+	SessionID string        `json:"session_id"`
+	Parts     []ContentPart `json:"parts"`
+	Model     string        `json:"model"`
+	Provider  string        `json:"provider"`
+	CreatedAt int64         `json:"created_at"`
+	UpdatedAt int64         `json:"updated_at"`
+}
 type MessageRole string
 
 const (
@@ -132,22 +150,11 @@ type Finish struct {
 
 func (Finish) isPart() {}
 
-type Message struct {
-	ID        string        `json:"id"`
-	Role      MessageRole   `json:"role"`
-	SessionID string        `json:"session_id"`
-	Parts     []ContentPart `json:"parts"`
-	Model     string        `json:"model"`
-	Provider  string        `json:"provider"`
-	CreatedAt int64         `json:"created_at"`
-	UpdatedAt int64         `json:"updated_at"`
-}
-
 // MarshalJSON implements the [json.Marshaler] interface.
 func (m Message) MarshalJSON() ([]byte, error) {
 	// We need to handle the Parts specially since they're ContentPart interfaces
 	// which can't be directly marshaled by the standard JSON package.
-	parts, err := marshallParts(m.Parts)
+	parts, err := MarshallParts(m.Parts)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +186,7 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	}
 
 	// Unmarshal the parts using our custom function
-	parts, err := unmarshallParts([]byte(aux.Parts))
+	parts, err := UnmarshallParts([]byte(aux.Parts))
 	if err != nil {
 		return err
 	}
@@ -447,4 +454,164 @@ func (m *Message) AddImageURL(url, detail string) {
 
 func (m *Message) AddBinary(mimeType string, data []byte) {
 	m.Parts = append(m.Parts, BinaryContent{MIMEType: mimeType, Data: data})
+}
+
+type partType string
+
+const (
+	reasoningType  partType = "reasoning"
+	textType       partType = "text"
+	imageURLType   partType = "image_url"
+	binaryType     partType = "binary"
+	toolCallType   partType = "tool_call"
+	toolResultType partType = "tool_result"
+	finishType     partType = "finish"
+)
+
+type partWrapper struct {
+	Type partType    `json:"type"`
+	Data ContentPart `json:"data"`
+}
+
+func MarshallParts(parts []ContentPart) ([]byte, error) {
+	wrappedParts := make([]partWrapper, len(parts))
+
+	for i, part := range parts {
+		var typ partType
+
+		switch part.(type) {
+		case ReasoningContent:
+			typ = reasoningType
+		case TextContent:
+			typ = textType
+		case ImageURLContent:
+			typ = imageURLType
+		case BinaryContent:
+			typ = binaryType
+		case ToolCall:
+			typ = toolCallType
+		case ToolResult:
+			typ = toolResultType
+		case Finish:
+			typ = finishType
+		default:
+			return nil, fmt.Errorf("unknown part type: %T", part)
+		}
+
+		wrappedParts[i] = partWrapper{
+			Type: typ,
+			Data: part,
+		}
+	}
+	return json.Marshal(wrappedParts)
+}
+
+func UnmarshallParts(data []byte) ([]ContentPart, error) {
+	temp := []json.RawMessage{}
+
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return nil, err
+	}
+
+	parts := make([]ContentPart, 0)
+
+	for _, rawPart := range temp {
+		var wrapper struct {
+			Type partType        `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+
+		if err := json.Unmarshal(rawPart, &wrapper); err != nil {
+			return nil, err
+		}
+
+		switch wrapper.Type {
+		case reasoningType:
+			part := ReasoningContent{}
+			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+		case textType:
+			part := TextContent{}
+			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+		case imageURLType:
+			part := ImageURLContent{}
+			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
+				return nil, err
+			}
+		case binaryType:
+			part := BinaryContent{}
+			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+		case toolCallType:
+			part := ToolCall{}
+			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+		case toolResultType:
+			part := ToolResult{}
+			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+		case finishType:
+			part := Finish{}
+			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+		default:
+			return nil, fmt.Errorf("unknown part type: %s", wrapper.Type)
+		}
+	}
+
+	return parts, nil
+}
+
+type Attachment struct {
+	FilePath string `json:"file_path"`
+	FileName string `json:"file_name"`
+	MimeType string `json:"mime_type"`
+	Content  []byte `json:"content"`
+}
+
+// MarshalJSON implements the [json.Marshaler] interface.
+func (a Attachment) MarshalJSON() ([]byte, error) {
+	// Encode the content as a base64 string
+	type Alias Attachment
+	return json.Marshal(&struct {
+		Content string `json:"content"`
+		*Alias
+	}{
+		Content: base64.StdEncoding.EncodeToString(a.Content),
+		Alias:   (*Alias)(&a),
+	})
+}
+
+// UnmarshalJSON implements the [json.Unmarshaler] interface.
+func (a *Attachment) UnmarshalJSON(data []byte) error {
+	// Decode the content from a base64 string
+	type Alias Attachment
+	aux := &struct {
+		Content string `json:"content"`
+		*Alias
+	}{
+		Alias: (*Alias)(a),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	content, err := base64.StdEncoding.DecodeString(aux.Content)
+	if err != nil {
+		return err
+	}
+	a.Content = content
+	return nil
 }

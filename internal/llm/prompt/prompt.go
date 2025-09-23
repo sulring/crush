@@ -22,15 +22,15 @@ const (
 	PromptDefault    PromptID = "default"
 )
 
-func GetPrompt(promptID PromptID, provider string, contextPaths ...string) string {
+func GetPrompt(cfg *config.Config, promptID PromptID, provider string, contextPaths ...string) string {
 	basePrompt := ""
 	switch promptID {
 	case PromptCoder:
-		basePrompt = CoderPrompt(provider, contextPaths...)
+		basePrompt = CoderPrompt(cfg, provider, contextPaths...)
 	case PromptTitle:
 		basePrompt = TitlePrompt()
 	case PromptTask:
-		basePrompt = TaskPrompt()
+		basePrompt = TaskPrompt(cfg)
 	case PromptSummarizer:
 		basePrompt = SummarizerPrompt()
 	default:

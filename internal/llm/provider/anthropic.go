@@ -80,13 +80,13 @@ func createAnthropicClient(opts providerClientOptions, tp AnthropicClientType) a
 	}
 
 	if opts.baseURL != "" {
-		resolvedBaseURL, err := config.Get().Resolve(opts.baseURL)
+		resolvedBaseURL, err := opts.cfg.Resolve(opts.baseURL)
 		if err == nil && resolvedBaseURL != "" {
 			anthropicClientOptions = append(anthropicClientOptions, option.WithBaseURL(resolvedBaseURL))
 		}
 	}
 
-	if config.Get().Options.Debug {
+	if opts.cfg.Options.Debug {
 		httpClient := log.NewHTTPClient()
 		anthropicClientOptions = append(anthropicClientOptions, option.WithHTTPClient(httpClient))
 	}
@@ -223,7 +223,7 @@ func (a *anthropicClient) finishReason(reason string) message.FinishReason {
 }
 
 func (a *anthropicClient) isThinkingEnabled() bool {
-	cfg := config.Get()
+	cfg := a.providerOptions.cfg
 	modelConfig := cfg.Models[config.SelectedModelTypeLarge]
 	if a.providerOptions.modelType == config.SelectedModelTypeSmall {
 		modelConfig = cfg.Models[config.SelectedModelTypeSmall]
@@ -234,7 +234,7 @@ func (a *anthropicClient) isThinkingEnabled() bool {
 func (a *anthropicClient) preparedMessages(messages []anthropic.MessageParam, tools []anthropic.ToolUnionParam) anthropic.MessageNewParams {
 	model := a.providerOptions.model(a.providerOptions.modelType)
 	var thinkingParam anthropic.ThinkingConfigParamUnion
-	cfg := config.Get()
+	cfg := a.providerOptions.cfg
 	modelConfig := cfg.Models[config.SelectedModelTypeLarge]
 	if a.providerOptions.modelType == config.SelectedModelTypeSmall {
 		modelConfig = cfg.Models[config.SelectedModelTypeSmall]
@@ -493,7 +493,7 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 	}
 
 	if apiErr.StatusCode == 401 {
-		a.providerOptions.apiKey, err = config.Get().Resolve(a.providerOptions.config.APIKey)
+		a.providerOptions.apiKey, err = a.providerOptions.cfg.Resolve(a.providerOptions.config.APIKey)
 		if err != nil {
 			return false, 0, fmt.Errorf("failed to resolve API key: %w", err)
 		}

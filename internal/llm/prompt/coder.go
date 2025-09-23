@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/crush/internal/llm/tools"
 )
 
-func CoderPrompt(p string, contextFiles ...string) string {
+func CoderPrompt(cfg *config.Config, p string, contextFiles ...string) string {
 	var basePrompt string
 
 	basePrompt = string(anthropicCoderPrompt)
@@ -28,11 +28,11 @@ func CoderPrompt(p string, contextFiles ...string) string {
 	if ok, _ := strconv.ParseBool(os.Getenv("CRUSH_CODER_V2")); ok {
 		basePrompt = string(coderV2Prompt)
 	}
-	envInfo := getEnvironmentInfo()
+	envInfo := getEnvironmentInfo(cfg)
 
-	basePrompt = fmt.Sprintf("%s\n\n%s\n%s", basePrompt, envInfo, lspInformation())
+	basePrompt = fmt.Sprintf("%s\n\n%s\n%s", basePrompt, envInfo, lspInformation(cfg))
 
-	contextContent := getContextFromPaths(config.Get().WorkingDir(), contextFiles)
+	contextContent := getContextFromPaths(cfg.WorkingDir(), contextFiles)
 	if contextContent != "" {
 		return fmt.Sprintf("%s\n\n# Project-Specific Context\n Make sure to follow the instructions in the context below\n%s", basePrompt, contextContent)
 	}
@@ -48,8 +48,8 @@ var geminiCoderPrompt []byte
 //go:embed v2.md
 var coderV2Prompt []byte
 
-func getEnvironmentInfo() string {
-	cwd := config.Get().WorkingDir()
+func getEnvironmentInfo(cfg *config.Config) string {
+	cwd := cfg.WorkingDir()
 	isGit := isGitRepo(cwd)
 	platform := runtime.GOOS
 	date := time.Now().Format("1/2/2006")
@@ -72,8 +72,7 @@ func isGitRepo(dir string) bool {
 	return err == nil
 }
 
-func lspInformation() string {
-	cfg := config.Get()
+func lspInformation(cfg *config.Config) string {
 	hasLSP := false
 	for _, v := range cfg.LSP {
 		if !v.Disabled {

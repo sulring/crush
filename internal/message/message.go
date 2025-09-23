@@ -3,21 +3,42 @@ package message
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/google/uuid"
 )
 
-type CreateMessageParams struct {
-	Role     MessageRole   `json:"role"`
-	Parts    []ContentPart `json:"parts"`
-	Model    string        `json:"model"`
-	Provider string        `json:"provider,omitempty"`
-}
+type (
+	CreateMessageParams = proto.CreateMessageParams
+	Message             = proto.Message
+	Attachment          = proto.Attachment
+	ToolCall            = proto.ToolCall
+	ToolResult          = proto.ToolResult
+	ContentPart         = proto.ContentPart
+	TextContent         = proto.TextContent
+	BinaryContent       = proto.BinaryContent
+	FinishReason        = proto.FinishReason
+	Finish              = proto.Finish
+)
+
+const (
+	Assistant = proto.Assistant
+	User      = proto.User
+	System    = proto.System
+	Tool      = proto.Tool
+
+	FinishReasonEndTurn          = proto.FinishReasonEndTurn
+	FinishReasonMaxTokens        = proto.FinishReasonMaxTokens
+	FinishReasonToolUse          = proto.FinishReasonToolUse
+	FinishReasonCanceled         = proto.FinishReasonCanceled
+	FinishReasonError            = proto.FinishReasonError
+	FinishReasonPermissionDenied = proto.FinishReasonPermissionDenied
+
+	FinishReasonUnknown = proto.FinishReasonUnknown
+)
 
 type Service interface {
 	pubsub.Suscriber[Message]
@@ -55,12 +76,12 @@ func (s *service) Delete(ctx context.Context, id string) error {
 }
 
 func (s *service) Create(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error) {
-	if params.Role != Assistant {
-		params.Parts = append(params.Parts, Finish{
+	if params.Role != proto.Assistant {
+		params.Parts = append(params.Parts, proto.Finish{
 			Reason: "stop",
 		})
 	}
-	partsJSON, err := marshallParts(params.Parts)
+	partsJSON, err := proto.MarshallParts(params.Parts)
 	if err != nil {
 		return Message{}, err
 	}
@@ -100,7 +121,7 @@ func (s *service) DeleteSessionMessages(ctx context.Context, sessionID string) e
 }
 
 func (s *service) Update(ctx context.Context, message Message) error {
-	parts, err := marshallParts(message.Parts)
+	parts, err := proto.MarshallParts(message.Parts)
 	if err != nil {
 		return err
 	}
@@ -146,137 +167,18 @@ func (s *service) List(ctx context.Context, sessionID string) ([]Message, error)
 }
 
 func (s *service) fromDBItem(item db.Message) (Message, error) {
-	parts, err := unmarshallParts([]byte(item.Parts))
+	parts, err := proto.UnmarshallParts([]byte(item.Parts))
 	if err != nil {
 		return Message{}, err
 	}
 	return Message{
 		ID:        item.ID,
 		SessionID: item.SessionID,
-		Role:      MessageRole(item.Role),
+		Role:      proto.MessageRole(item.Role),
 		Parts:     parts,
 		Model:     item.Model.String,
 		Provider:  item.Provider.String,
 		CreatedAt: item.CreatedAt,
 		UpdatedAt: item.UpdatedAt,
 	}, nil
-}
-
-type partType string
-
-const (
-	reasoningType  partType = "reasoning"
-	textType       partType = "text"
-	imageURLType   partType = "image_url"
-	binaryType     partType = "binary"
-	toolCallType   partType = "tool_call"
-	toolResultType partType = "tool_result"
-	finishType     partType = "finish"
-)
-
-type partWrapper struct {
-	Type partType    `json:"type"`
-	Data ContentPart `json:"data"`
-}
-
-func marshallParts(parts []ContentPart) ([]byte, error) {
-	wrappedParts := make([]partWrapper, len(parts))
-
-	for i, part := range parts {
-		var typ partType
-
-		switch part.(type) {
-		case ReasoningContent:
-			typ = reasoningType
-		case TextContent:
-			typ = textType
-		case ImageURLContent:
-			typ = imageURLType
-		case BinaryContent:
-			typ = binaryType
-		case ToolCall:
-			typ = toolCallType
-		case ToolResult:
-			typ = toolResultType
-		case Finish:
-			typ = finishType
-		default:
-			return nil, fmt.Errorf("unknown part type: %T", part)
-		}
-
-		wrappedParts[i] = partWrapper{
-			Type: typ,
-			Data: part,
-		}
-	}
-	return json.Marshal(wrappedParts)
-}
-
-func unmarshallParts(data []byte) ([]ContentPart, error) {
-	temp := []json.RawMessage{}
-
-	if err := json.Unmarshal(data, &temp); err != nil {
-		return nil, err
-	}
-
-	parts := make([]ContentPart, 0)
-
-	for _, rawPart := range temp {
-		var wrapper struct {
-			Type partType        `json:"type"`
-			Data json.RawMessage `json:"data"`
-		}
-
-		if err := json.Unmarshal(rawPart, &wrapper); err != nil {
-			return nil, err
-		}
-
-		switch wrapper.Type {
-		case reasoningType:
-			part := ReasoningContent{}
-			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
-				return nil, err
-			}
-			parts = append(parts, part)
-		case textType:
-			part := TextContent{}
-			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
-				return nil, err
-			}
-			parts = append(parts, part)
-		case imageURLType:
-			part := ImageURLContent{}
-			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
-				return nil, err
-			}
-		case binaryType:
-			part := BinaryContent{}
-			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
-				return nil, err
-			}
-			parts = append(parts, part)
-		case toolCallType:
-			part := ToolCall{}
-			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
-				return nil, err
-			}
-			parts = append(parts, part)
-		case toolResultType:
-			part := ToolResult{}
-			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
-				return nil, err
-			}
-			parts = append(parts, part)
-		case finishType:
-			part := Finish{}
-			if err := json.Unmarshal(wrapper.Data, &part); err != nil {
-				return nil, err
-			}
-			parts = append(parts, part)
-		default:
-			return nil, fmt.Errorf("unknown part type: %s", wrapper.Type)
-		}
-	}
-
-	return parts, nil
 }

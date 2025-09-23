@@ -22,12 +22,12 @@ func (app *App) initLSPClients(ctx context.Context) {
 }
 
 // createAndStartLSPClient creates a new LSP client, initializes it, and starts its workspace watcher
-func (app *App) createAndStartLSPClient(ctx context.Context, name string, config config.LSPConfig) {
-	slog.Info("Creating LSP client", "name", name, "command", config.Command, "fileTypes", config.FileTypes, "args", config.Args)
+func (app *App) createAndStartLSPClient(ctx context.Context, name string, lspCfg config.LSPConfig) {
+	slog.Info("Creating LSP client", "name", name, "command", lspCfg.Command, "fileTypes", lspCfg.FileTypes, "args", lspCfg.Args)
 
 	// Check if any root markers exist in the working directory (config now has defaults)
-	if !lsp.HasRootMarkers(app.config.WorkingDir(), config.RootMarkers) {
-		slog.Info("Skipping LSP client - no root markers found", "name", name, "rootMarkers", config.RootMarkers)
+	if !lsp.HasRootMarkers(app.config.WorkingDir(), lspCfg.RootMarkers) {
+		slog.Info("Skipping LSP client - no root markers found", "name", name, "rootMarkers", lspCfg.RootMarkers)
 		app.updateLSPState(name, lsp.StateDisabled, nil, 0)
 		return
 	}
@@ -36,7 +36,7 @@ func (app *App) createAndStartLSPClient(ctx context.Context, name string, config
 	app.updateLSPState(name, lsp.StateStarting, nil, 0)
 
 	// Create LSP client.
-	lspClient, err := lsp.New(ctx, name, config)
+	lspClient, err := lsp.New(ctx, app.config, name, lspCfg)
 	if err != nil {
 		slog.Error("Failed to create LSP client for", name, err)
 		app.updateLSPState(name, lsp.StateError, err, 0)

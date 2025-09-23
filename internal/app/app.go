@@ -52,6 +52,9 @@ type App struct {
 
 // New initializes a new applcation instance.
 func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
+	// Attach config to context for use in services.
+	ctx = config.WithContext(ctx, cfg)
+
 	q := db.New(conn)
 	sessions := session.NewService(q)
 	messages := message.NewService(q)
@@ -275,6 +278,7 @@ func (app *App) InitCoderAgent() error {
 	var err error
 	app.CoderAgent, err = agent.NewAgent(
 		app.globalCtx,
+		app.config,
 		coderAgentCfg,
 		app.Permissions,
 		app.Sessions,

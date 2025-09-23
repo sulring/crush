@@ -6,43 +6,19 @@ import (
 	"time"
 
 	"github.com/charmbracelet/crush/internal/lsp"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
 )
 
-// LSPEventType represents the type of LSP event
-type LSPEventType string
-
-const (
-	LSPEventStateChanged       LSPEventType = "state_changed"
-	LSPEventDiagnosticsChanged LSPEventType = "diagnostics_changed"
+type (
+	LSPClientInfo = proto.LSPClientInfo
+	LSPEvent      = proto.LSPEvent
 )
 
-func (e LSPEventType) MarshalText() ([]byte, error) {
-	return []byte(e), nil
-}
-
-func (e *LSPEventType) UnmarshalText(data []byte) error {
-	*e = LSPEventType(data)
-	return nil
-}
-
-// LSPEvent represents an event in the LSP system
-type LSPEvent struct {
-	Type            LSPEventType    `json:"type"`
-	Name            string          `json:"name"`
-	State           lsp.ServerState `json:"state"`
-	Error           error           `json:"error,omitempty"`
-	DiagnosticCount int             `json:"diagnostic_count,omitempty"`
-}
-
-// LSPClientInfo holds information about an LSP client's state
-type LSPClientInfo struct {
-	Name            string          `json:"name"`
-	State           lsp.ServerState `json:"state"`
-	Error           error           `json:"error,omitempty"`
-	DiagnosticCount int             `json:"diagnostic_count,omitempty"`
-	ConnectedAt     time.Time       `json:"connected_at"`
-}
+const (
+	LSPEventStateChanged       = proto.LSPEventStateChanged
+	LSPEventDiagnosticsChanged = proto.LSPEventDiagnosticsChanged
+)
 
 // SubscribeLSPEvents returns a channel for LSP events
 func (a *App) SubscribeLSPEvents(ctx context.Context) <-chan pubsub.Event[LSPEvent] {

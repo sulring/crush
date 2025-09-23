@@ -33,7 +33,7 @@ func newBedrockClient(opts providerClientOptions) BedrockClient {
 	}
 
 	opts.model = func(modelType config.SelectedModelType) catwalk.Model {
-		model := config.Get().GetModelByType(modelType)
+		model := opts.cfg.GetModelByType(modelType)
 
 		// Prefix the model name with region
 		regionPrefix := region[:2]

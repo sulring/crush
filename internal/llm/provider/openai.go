@@ -42,13 +42,13 @@ func createOpenAIClient(opts providerClientOptions) openai.Client {
 		openaiClientOptions = append(openaiClientOptions, option.WithAPIKey(opts.apiKey))
 	}
 	if opts.baseURL != "" {
-		resolvedBaseURL, err := config.Get().Resolve(opts.baseURL)
+		resolvedBaseURL, err := opts.cfg.Resolve(opts.baseURL)
 		if err == nil && resolvedBaseURL != "" {
 			openaiClientOptions = append(openaiClientOptions, option.WithBaseURL(resolvedBaseURL))
 		}
 	}
 
-	if config.Get().Options.Debug {
+	if opts.cfg.Options.Debug {
 		httpClient := log.NewHTTPClient()
 		openaiClientOptions = append(openaiClientOptions, option.WithHTTPClient(httpClient))
 	}
@@ -217,7 +217,7 @@ func (o *openaiClient) finishReason(reason string) message.FinishReason {
 
 func (o *openaiClient) preparedParams(messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam) openai.ChatCompletionNewParams {
 	model := o.providerOptions.model(o.providerOptions.modelType)
-	cfg := config.Get()
+	cfg := o.providerOptions.cfg
 
 	modelConfig := cfg.Models[config.SelectedModelTypeLarge]
 	if o.providerOptions.modelType == config.SelectedModelTypeSmall {
@@ -514,7 +514,7 @@ func (o *openaiClient) shouldRetry(attempts int, err error) (bool, int64, error)
 	if errors.As(err, &apiErr) {
 		// Check for token expiration (401 Unauthorized)
 		if apiErr.StatusCode == 401 {
-			o.providerOptions.apiKey, err = config.Get().Resolve(o.providerOptions.config.APIKey)
+			o.providerOptions.apiKey, err = o.providerOptions.cfg.Resolve(o.providerOptions.config.APIKey)
 			if err != nil {
 				return false, 0, fmt.Errorf("failed to resolve API key: %w", err)
 			}

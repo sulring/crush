@@ -62,6 +62,8 @@ type Provider interface {
 }
 
 type providerClientOptions struct {
+	cfg *config.Config
+
 	baseURL            string
 	config             config.ProviderConfig
 	apiKey             string
@@ -139,40 +141,41 @@ func WithMaxTokens(maxTokens int64) ProviderClientOption {
 	}
 }
 
-func NewProvider(cfg config.ProviderConfig, opts ...ProviderClientOption) (Provider, error) {
+func NewProvider(cfg *config.Config, pcfg config.ProviderConfig, opts ...ProviderClientOption) (Provider, error) {
 	restore := config.PushPopCrushEnv()
 	defer restore()
-	resolvedAPIKey, err := config.Get().Resolve(cfg.APIKey)
+	resolvedAPIKey, err := cfg.Resolve(pcfg.APIKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve API key for provider %s: %w", cfg.ID, err)
+		return nil, fmt.Errorf("failed to resolve API key for provider %s: %w", pcfg.ID, err)
 	}
 
 	// Resolve extra headers
 	resolvedExtraHeaders := make(map[string]string)
-	for key, value := range cfg.ExtraHeaders {
-		resolvedValue, err := config.Get().Resolve(value)
+	for key, value := range pcfg.ExtraHeaders {
+		resolvedValue, err := cfg.Resolve(value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve extra header %s for provider %s: %w", key, cfg.ID, err)
+			return nil, fmt.Errorf("failed to resolve extra header %s for provider %s: %w", key, pcfg.ID, err)
 		}
 		resolvedExtraHeaders[key] = resolvedValue
 	}
 
 	clientOptions := providerClientOptions{
-		baseURL:            cfg.BaseURL,
-		config:             cfg,
+		cfg:                cfg,
+		baseURL:            pcfg.BaseURL,
+		config:             pcfg,
 		apiKey:             resolvedAPIKey,
 		extraHeaders:       resolvedExtraHeaders,
-		extraBody:          cfg.ExtraBody,
-		extraParams:        cfg.ExtraParams,
-		systemPromptPrefix: cfg.SystemPromptPrefix,
+		extraBody:          pcfg.ExtraBody,
+		extraParams:        pcfg.ExtraParams,
+		systemPromptPrefix: pcfg.SystemPromptPrefix,
 		model: func(tp config.SelectedModelType) catwalk.Model {
-			return *config.Get().GetModelByType(tp)
+			return *cfg.GetModelByType(tp)
 		},
 	}
 	for _, o := range opts {
 		o(&clientOptions)
 	}
-	switch cfg.Type {
+	switch pcfg.Type {
 	case catwalk.TypeAnthropic:
 		return &baseProvider[AnthropicClient]{
 			options: clientOptions,
@@ -204,5 +207,5 @@ func NewProvider(cfg config.ProviderConfig, opts ...ProviderClientOption) (Provi
 			client:  newVertexAIClient(clientOptions),
 		}, nil
 	}
-	return nil, fmt.Errorf("provider not supported: %s", cfg.Type)
+	return nil, fmt.Errorf("provider not supported: %s", pcfg.Type)
 }

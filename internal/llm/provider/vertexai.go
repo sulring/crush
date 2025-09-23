@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/log"
 	"google.golang.org/genai"
 )
@@ -20,7 +19,7 @@ func newVertexAIClient(opts providerClientOptions) VertexAIClient {
 		Location: location,
 		Backend:  genai.BackendVertexAI,
 	}
-	if config.Get().Options.Debug {
+	if opts.cfg.Options.Debug {
 		cc.HTTPClient = log.NewHTTPClient()
 	}
 	client, err := genai.NewClient(context.Background(), cc)
