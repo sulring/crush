@@ -18,7 +18,6 @@ import (
 	"github.com/charmbracelet/crush/internal/env"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/home"
-	"github.com/charmbracelet/crush/internal/log"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
 )
 
@@ -55,12 +54,6 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 	if debug {
 		cfg.Options.Debug = true
 	}
-
-	// Setup logs
-	log.Setup(
-		filepath.Join(cfg.Options.DataDirectory, "logs", fmt.Sprintf("%s.log", appName)),
-		cfg.Options.Debug,
-	)
 
 	// Load known providers, this loads the config from catwalk
 	providers, err := Providers(cfg)
@@ -527,6 +520,10 @@ func lookupConfigs(cwd string) []string {
 	configPaths := []string{
 		globalConfig(),
 		GlobalConfigData(),
+	}
+
+	if cwd == "" {
+		return configPaths
 	}
 
 	configNames := []string{appName + ".json", "." + appName + ".json"}

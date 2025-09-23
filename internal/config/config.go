@@ -577,3 +577,18 @@ func resolveEnvs(envs map[string]string) []string {
 	}
 	return res
 }
+
+type contextKey struct{}
+
+var configKey = contextKey{}
+
+// WithContext returns a copy of the provided context with the given config.
+func WithContext(ctx context.Context, cfg *Config) context.Context {
+	return context.WithValue(ctx, configKey, cfg)
+}
+
+// FromContextConfig retrieves the config from the context, if present.
+func FromContext(ctx context.Context) (*Config, bool) {
+	cfg, ok := ctx.Value(configKey).(*Config)
+	return cfg, ok
+}

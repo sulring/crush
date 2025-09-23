@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync/atomic"
 )
 
 const (
@@ -17,25 +16,15 @@ type ProjectInitFlag struct {
 	Initialized bool `json:"initialized"`
 }
 
-// TODO: we need to remove the global config instance keeping it now just until everything is migrated
-var instance atomic.Pointer[Config]
-
 func Init(workingDir, dataDir string, debug bool) (*Config, error) {
 	cfg, err := Load(workingDir, dataDir, debug)
 	if err != nil {
 		return nil, err
 	}
-	instance.Store(cfg)
-	return instance.Load(), nil
+	return cfg, nil
 }
 
-func Get() *Config {
-	cfg := instance.Load()
-	return cfg
-}
-
-func ProjectNeedsInitialization() (bool, error) {
-	cfg := Get()
+func ProjectNeedsInitialization(cfg *Config) (bool, error) {
 	if cfg == nil {
 		return false, fmt.Errorf("config not loaded")
 	}
@@ -90,8 +79,7 @@ func contextPathsExist(dir string) (bool, error) {
 	return false, nil
 }
 
-func MarkProjectInitialized() error {
-	cfg := Get()
+func MarkProjectInitialized(cfg *Config) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
 	}
@@ -106,10 +94,10 @@ func MarkProjectInitialized() error {
 	return nil
 }
 
-func HasInitialDataConfig() bool {
+func HasInitialDataConfig(cfg *Config) bool {
 	cfgPath := GlobalConfigData()
 	if _, err := os.Stat(cfgPath); err != nil {
 		return false
 	}
-	return Get().IsConfigured()
+	return cfg.IsConfigured()
 }
