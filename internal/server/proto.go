@@ -1,8 +1,6 @@
 package server
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -16,6 +14,7 @@ import (
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/google/uuid"
 )
 
 type controllerV1 struct {
@@ -30,9 +29,11 @@ func (c *controllerV1) handleGetInstances(w http.ResponseWriter, r *http.Request
 	instances := []proto.Instance{}
 	for _, ins := range c.instances.Seq2() {
 		instances = append(instances, proto.Instance{
-			ID:   ins.ID(),
-			Path: ins.Path(),
-			YOLO: ins.cfg.Permissions != nil && ins.cfg.Permissions.SkipRequests,
+			ID:      ins.ID(),
+			Path:    ins.Path(),
+			YOLO:    ins.cfg.Permissions != nil && ins.cfg.Permissions.SkipRequests,
+			DataDir: ins.cfg.Options.DataDirectory,
+			Debug:   ins.cfg.Options.Debug,
 		})
 	}
 	jsonEncode(w, instances)
@@ -502,21 +503,13 @@ func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	hasher := sha256.New()
-	hasher.Write([]byte(filepath.Clean(args.Path)))
-	id := hex.EncodeToString(hasher.Sum(nil))
-	if existing, ok := c.instances.Get(id); ok {
-		jsonEncode(w, proto.Instance{
-			ID:   existing.ID(),
-			Path: existing.Path(),
-			// TODO: Investigate if this makes sense.
-			YOLO:    existing.cfg.Permissions != nil && existing.cfg.Permissions.SkipRequests,
-			Debug:   existing.cfg.Options.Debug,
-			DataDir: existing.cfg.Options.DataDirectory,
-		})
+	if args.Path == "" {
+		c.logError(r, "path is required")
+		jsonError(w, http.StatusBadRequest, "path is required")
 		return
 	}
 
+	id := uuid.New().String()
 	cfg, err := config.Init(args.Path, args.DataDir, args.Debug)
 	if err != nil {
 		c.logError(r, "failed to initialize config", "error", err)
@@ -560,9 +553,11 @@ func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Reques
 
 	c.instances.Set(id, ins)
 	jsonEncode(w, proto.Instance{
-		ID:   id,
-		Path: args.Path,
-		YOLO: cfg.Permissions.SkipRequests,
+		ID:      id,
+		Path:    args.Path,
+		DataDir: cfg.Options.DataDirectory,
+		Debug:   cfg.Options.Debug,
+		YOLO:    cfg.Permissions.SkipRequests,
 	})
 }
 

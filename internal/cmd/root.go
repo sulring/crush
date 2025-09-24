@@ -151,14 +151,17 @@ func setupApp(cmd *cobra.Command) (*client.Client, error) {
 		return nil, err
 	}
 
-	if _, err := c.CreateInstance(ctx, proto.Instance{
+	ins, err := c.CreateInstance(ctx, proto.Instance{
 		Path:    cwd,
 		DataDir: dataDir,
 		Debug:   debug,
 		YOLO:    yolo,
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to create or connect to instance: %v", err)
 	}
+
+	c.SetID(ins.ID)
 
 	return c, nil
 }

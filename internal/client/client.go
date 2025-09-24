@@ -2,8 +2,6 @@ package client
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -45,12 +43,8 @@ func NewClient(path, network, address string) (*Client, error) {
 		Transport: tr,
 		Timeout:   0, // we need this to be 0 for long-lived connections and SSE streams
 	}
-	hasher := sha256.New()
-	hasher.Write([]byte(path))
-	id := hex.EncodeToString(hasher.Sum(nil))
 	return &Client{
 		h:    h,
-		id:   id,
 		path: filepath.Clean(path),
 	}, nil
 }
@@ -58,6 +52,11 @@ func NewClient(path, network, address string) (*Client, error) {
 // ID returns the client's instance unique identifier.
 func (c *Client) ID() string {
 	return c.id
+}
+
+// SetID sets the client's instance unique identifier.
+func (c *Client) SetID(id string) {
+	c.id = id
 }
 
 // Path returns the client's instance filesystem path.
