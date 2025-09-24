@@ -100,7 +100,7 @@ crush -y
 				}
 			}
 			if err != nil {
-				return fmt.Errorf("failed to connect to crush server: %v", err)
+				return fmt.Errorf("failed to initialize crush server: %v", err)
 			}
 
 		default:
@@ -112,9 +112,8 @@ crush -y
 			return err
 		}
 
-		tries := 5
-		for i := range tries {
-			err := c.Health()
+		for range 10 {
+			err = c.Health()
 			if err == nil {
 				break
 			}
@@ -123,9 +122,9 @@ crush -y
 				return cmd.Context().Err()
 			case <-time.After(100 * time.Millisecond):
 			}
-			if i == tries-1 {
-				return fmt.Errorf("failed to connect to crush server after %d attempts: %v", tries, err)
-			}
+		}
+		if err != nil {
+			return fmt.Errorf("failed to connect to crush server: %v", err)
 		}
 
 		m, err := tui.New(c)
