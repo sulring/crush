@@ -639,3 +639,24 @@ func GlobalConfigData() string {
 
 	return filepath.Join(home.Dir(), ".local", "share", appName, fmt.Sprintf("%s.json", appName))
 }
+
+// GlobalCacheDir returns the path to the main cache directory for the application.
+func GlobalCacheDir() string {
+	xdgCacheHome := os.Getenv("XDG_CACHE_HOME")
+	if xdgCacheHome != "" {
+		return filepath.Join(xdgCacheHome, appName)
+	}
+
+	// return the path to the main cache directory
+	// for windows, it should be in `%LOCALAPPDATA%/crush/Cache`
+	// for linux and macOS, it should be in `$HOME/.cache/crush/`
+	if runtime.GOOS == "windows" {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			localAppData = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local")
+		}
+		return filepath.Join(localAppData, appName, "Cache")
+	}
+
+	return filepath.Join(home.Dir(), ".cache", appName)
+}

@@ -2,14 +2,20 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/client"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/server"
@@ -65,6 +71,10 @@ crush run "Explain the use of context in Go"
 crush -y
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := ensureServerRunning(cmd); err != nil {
+			return err
+		}
+
 		c, err := setupApp(cmd)
 		if err != nil {
 			return err
@@ -164,6 +174,78 @@ func setupApp(cmd *cobra.Command) (*client.Client, error) {
 	c.SetID(ins.ID)
 
 	return c, nil
+}
+
+var safeNameRegexp = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+
+func ensureServerRunning(cmd *cobra.Command) error {
+	stat, err := os.Stat(clientHost)
+	if err == nil && stat.Mode()&os.ModeSocket == 0 {
+		return fmt.Errorf("crush server socket path exists but is not a socket: %s", clientHost)
+	} else if err == nil && stat.Mode()&os.ModeSocket != 0 {
+		// Socket exists, assume server is running.
+		return nil
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("failed to stat crush server socket: %v", err)
+	}
+
+	// Start the server as a detached process if the socket does not exist.
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %v", err)
+	}
+
+	safeClientHost := safeNameRegexp.ReplaceAllString(clientHost, "_")
+	chDir := filepath.Join(config.GlobalCacheDir(), "server-"+safeClientHost)
+	if err := os.MkdirAll(chDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create server working directory: %v", err)
+	}
+
+	c := exec.CommandContext(cmd.Context(), exe, "server")
+	stdoutPath := filepath.Join(chDir, "stdout.log")
+	stderrPath := filepath.Join(chDir, "stderr.log")
+	detachProcess(c, stdoutPath, stderrPath)
+
+	stdout, err := os.Create(stdoutPath)
+	if err != nil {
+		return fmt.Errorf("failed to create stdout log file: %v", err)
+	}
+	defer stdout.Close()
+	c.Stdout = stdout
+
+	stderr, err := os.Create(stderrPath)
+	if err != nil {
+		return fmt.Errorf("failed to create stderr log file: %v", err)
+	}
+	defer stderr.Close()
+	c.Stderr = stderr
+
+	if err := c.Start(); err != nil {
+		return fmt.Errorf("failed to start crush server: %v", err)
+	}
+
+	if err := c.Process.Release(); err != nil {
+		return fmt.Errorf("failed to detach crush server process: %v", err)
+	}
+
+	// Wait for the server to start and create the socket.
+	for range 10 {
+		stat, err := os.Stat(clientHost)
+		if err == nil && stat.Mode()&os.ModeSocket != 0 {
+			// Socket exists, server is running.
+			return nil
+		} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("failed to stat crush server socket: %v", err)
+		}
+		// Sleep for 100ms before checking again.
+		select {
+		case <-cmd.Context().Done():
+			return fmt.Errorf("context cancelled while waiting for crush server to start")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	return nil
 }
 
 func MaybePrependStdin(prompt string) (string, error) {
