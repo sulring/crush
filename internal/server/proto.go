@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/config"
@@ -14,6 +15,7 @@ import (
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/version"
 	"github.com/google/uuid"
 )
 
@@ -23,6 +25,15 @@ type controllerV1 struct {
 
 func (c *controllerV1) handleGetHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
+}
+
+func (c *controllerV1) handleGetVersion(w http.ResponseWriter, r *http.Request) {
+	jsonEncode(w, proto.VersionInfo{
+		Version:   version.Version,
+		Commit:    version.Commit,
+		GoVersion: runtime.Version(),
+		Platform:  fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
+	})
 }
 
 func (c *controllerV1) handleGetConfig(w http.ResponseWriter, r *http.Request) {

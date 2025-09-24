@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/server"
 )
 
@@ -90,4 +91,18 @@ func (c *Client) Health() error {
 		return fmt.Errorf("server health check failed: %s", rsp.Status)
 	}
 	return nil
+}
+
+// VersionInfo retrieves the server's version information.
+func (c *Client) VersionInfo() (*proto.VersionInfo, error) {
+	var vi proto.VersionInfo
+	rsp, err := c.h.Get("http://localhost/v1/version")
+	if err != nil {
+		return nil, err
+	}
+	defer rsp.Body.Close()
+	if err := json.NewDecoder(rsp.Body).Decode(&vi); err != nil {
+		return nil, err
+	}
+	return &vi, nil
 }
