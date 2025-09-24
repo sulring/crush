@@ -106,3 +106,22 @@ func (c *Client) VersionInfo() (*proto.VersionInfo, error) {
 	}
 	return &vi, nil
 }
+
+// ShutdownServer sends a shutdown request to the server.
+func (c *Client) ShutdownServer() error {
+	req, err := http.NewRequest("POST", "http://localhost/v1/control", jsonBody(proto.ServerControl{
+		Command: "shutdown",
+	}))
+	if err != nil {
+		return err
+	}
+	rsp, err := c.h.Do(req)
+	if err != nil {
+		return err
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server shutdown failed: %s", rsp.Status)
+	}
+	return nil
+}

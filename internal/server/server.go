@@ -16,7 +16,7 @@ import (
 )
 
 // ErrServerClosed is returned when the server is closed.
-var ErrServerClosed = fmt.Errorf("server closed")
+var ErrServerClosed = http.ErrServerClosed
 
 // InstanceState represents the state of a running [app.App] instance.
 type InstanceState uint8
@@ -115,6 +115,7 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	mux.HandleFunc("GET /v1/health", c.handleGetHealth)
 	mux.HandleFunc("GET /v1/version", c.handleGetVersion)
 	mux.HandleFunc("GET /v1/config", c.handleGetConfig)
+	mux.HandleFunc("POST /v1/control", c.handlePostControl)
 	mux.HandleFunc("GET /v1/instances", c.handleGetInstances)
 	mux.HandleFunc("POST /v1/instances", c.handlePostInstances)
 	mux.HandleFunc("DELETE /v1/instances", c.handleDeleteInstances)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -34,6 +35,29 @@ func (c *controllerV1) handleGetVersion(w http.ResponseWriter, r *http.Request) 
 		GoVersion: runtime.Version(),
 		Platform:  fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
 	})
+}
+
+func (c *controllerV1) handlePostControl(w http.ResponseWriter, r *http.Request) {
+	var req proto.ServerControl
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.logError(r, "failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	switch req.Command {
+	case "shutdown":
+		go func() {
+			slog.Info("shutting down server...")
+			if err := c.Shutdown(context.Background()); err != nil {
+				c.logError(r, "failed to shutdown server", "error", err)
+			}
+		}()
+	default:
+		c.logError(r, "unknown command", "command", req.Command)
+		jsonError(w, http.StatusBadRequest, "unknown command")
+		return
+	}
 }
 
 func (c *controllerV1) handleGetConfig(w http.ResponseWriter, r *http.Request) {

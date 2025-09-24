@@ -60,12 +60,16 @@ var serverCmd = &cobra.Command{
 		select {
 		case <-sigch:
 			slog.Info("Received interrupt signal...")
-		case err := <-errch:
+		case err = <-errch:
 			if err != nil && !errors.Is(err, server.ErrServerClosed) {
 				_ = srv.Close()
 				slog.Error("Server error", "error", err)
 				return fmt.Errorf("server error: %v", err)
 			}
+		}
+
+		if errors.Is(err, server.ErrServerClosed) {
+			return nil
 		}
 
 		ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
