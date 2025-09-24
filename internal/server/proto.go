@@ -21,6 +21,10 @@ type controllerV1 struct {
 	*Server
 }
 
+func (c *controllerV1) handleGetHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
 func (c *controllerV1) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	jsonEncode(w, c.cfg)
 }

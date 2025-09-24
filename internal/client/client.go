@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -64,7 +65,7 @@ func (c *Client) Path() string {
 	return c.path
 }
 
-// GetGlobalConfig retrieves the server's configuration via RPC.
+// GetGlobalConfig retrieves the server's configuration.
 func (c *Client) GetGlobalConfig() (*config.Config, error) {
 	var cfg config.Config
 	rsp, err := c.h.Get("http://localhost/v1/config")
@@ -76,4 +77,17 @@ func (c *Client) GetGlobalConfig() (*config.Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// Health checks the server's health status.
+func (c *Client) Health() error {
+	rsp, err := c.h.Get("http://localhost/v1/health")
+	if err != nil {
+		return err
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server health check failed: %s", rsp.Status)
+	}
+	return nil
 }

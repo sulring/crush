@@ -112,6 +112,7 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	p.SetUnencryptedHTTP2(true)
 	c := &controllerV1{Server: s}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/health", c.handleGetHealth)
 	mux.HandleFunc("GET /v1/config", c.handleGetConfig)
 	mux.HandleFunc("GET /v1/instances", c.handleGetInstances)
 	mux.HandleFunc("POST /v1/instances", c.handlePostInstances)
