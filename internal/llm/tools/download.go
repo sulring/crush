@@ -13,19 +13,13 @@ import (
 	"time"
 
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
-type DownloadParams struct {
-	URL      string `json:"url"`
-	FilePath string `json:"file_path"`
-	Timeout  int    `json:"timeout,omitempty"`
-}
-
-type DownloadPermissionsParams struct {
-	URL      string `json:"url"`
-	FilePath string `json:"file_path"`
-	Timeout  int    `json:"timeout,omitempty"`
-}
+type (
+	DownloadParams            = proto.DownloadParams
+	DownloadPermissionsParams = proto.DownloadPermissionsParams
+)
 
 type downloadTool struct {
 	client      *http.Client
@@ -33,7 +27,7 @@ type downloadTool struct {
 	workingDir  string
 }
 
-const DownloadToolName = "download"
+const DownloadToolName = proto.DownloadToolName
 
 //go:embed download.md
 var downloadDescription []byte

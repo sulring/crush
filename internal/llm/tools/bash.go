@@ -12,25 +12,16 @@ import (
 
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/shell"
 )
 
-type BashParams struct {
-	Command string `json:"command"`
-	Timeout int    `json:"timeout"`
-}
+type (
+	BashParams            = proto.BashParams
+	BashPermissionsParams = proto.BashPermissionsParams
+	BashResponseMetadata  = proto.BashResponseMetadata
+)
 
-type BashPermissionsParams struct {
-	Command string `json:"command"`
-	Timeout int    `json:"timeout"`
-}
-
-type BashResponseMetadata struct {
-	StartTime        int64  `json:"start_time"`
-	EndTime          int64  `json:"end_time"`
-	Output           string `json:"output"`
-	WorkingDirectory string `json:"working_directory"`
-}
 type bashTool struct {
 	permissions permission.Service
 	workingDir  string
@@ -38,7 +29,7 @@ type bashTool struct {
 }
 
 const (
-	BashToolName = "bash"
+	BashToolName = proto.BashToolName
 
 	DefaultTimeout  = 1 * 60 * 1000  // 1 minutes in milliseconds
 	MaxTimeout      = 10 * 60 * 1000 // 10 minutes in milliseconds

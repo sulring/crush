@@ -10,25 +10,20 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
-type SourcegraphParams struct {
-	Query         string `json:"query"`
-	Count         int    `json:"count,omitempty"`
-	ContextWindow int    `json:"context_window,omitempty"`
-	Timeout       int    `json:"timeout,omitempty"`
-}
-
-type SourcegraphResponseMetadata struct {
-	NumberOfMatches int  `json:"number_of_matches"`
-	Truncated       bool `json:"truncated"`
-}
+type (
+	SourcegraphParams           = proto.SourcegraphParams
+	SourcegraphResponseMetadata = proto.SourcegraphResponseMetadata
+)
 
 type sourcegraphTool struct {
 	client *http.Client
 }
 
-const SourcegraphToolName = "sourcegraph"
+const SourcegraphToolName = proto.SourcegraphToolName
 
 //go:embed sourcegraph.md
 var sourcegraphDescription []byte

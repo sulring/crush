@@ -11,29 +11,15 @@ import (
 
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
-type LSParams struct {
-	Path   string   `json:"path"`
-	Ignore []string `json:"ignore"`
-}
-
-type LSPermissionsParams struct {
-	Path   string   `json:"path"`
-	Ignore []string `json:"ignore"`
-}
-
-type TreeNode struct {
-	Name     string      `json:"name"`
-	Path     string      `json:"path"`
-	Type     string      `json:"type"` // "file" or "directory"
-	Children []*TreeNode `json:"children,omitempty"`
-}
-
-type LSResponseMetadata struct {
-	NumberOfFiles int  `json:"number_of_files"`
-	Truncated     bool `json:"truncated"`
-}
+type (
+	LSParams            = proto.LSParams
+	LSPermissionsParams = proto.LSPermissionsParams
+	LSResponseMetadata  = proto.LSResponseMetadata
+	TreeNode            = proto.TreeNode
+)
 
 type lsTool struct {
 	workingDir  string
@@ -41,7 +27,7 @@ type lsTool struct {
 }
 
 const (
-	LSToolName = "ls"
+	LSToolName = proto.LSToolName
 	MaxLSFiles = 1000
 )
 

@@ -15,22 +15,17 @@ import (
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
 //go:embed view.md
 var viewDescription []byte
 
-type ViewParams struct {
-	FilePath string `json:"file_path"`
-	Offset   int    `json:"offset"`
-	Limit    int    `json:"limit"`
-}
-
-type ViewPermissionsParams struct {
-	FilePath string `json:"file_path"`
-	Offset   int    `json:"offset"`
-	Limit    int    `json:"limit"`
-}
+type (
+	ViewParams            = proto.ViewParams
+	ViewPermissionsParams = proto.ViewPermissionsParams
+	ViewResponseMetadata  = proto.ViewResponseMetadata
+)
 
 type viewTool struct {
 	lspClients  *csync.Map[string, *lsp.Client]
@@ -38,13 +33,8 @@ type viewTool struct {
 	permissions permission.Service
 }
 
-type ViewResponseMetadata struct {
-	FilePath string `json:"file_path"`
-	Content  string `json:"content"`
-}
-
 const (
-	ViewToolName     = "view"
+	ViewToolName     = proto.ViewToolName
 	MaxReadSize      = 250 * 1024
 	DefaultReadLimit = 2000
 	MaxLineLength    = 2000

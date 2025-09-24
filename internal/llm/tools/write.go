@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/crush/internal/diff"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
+	"github.com/charmbracelet/crush/internal/proto"
 
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/permission"
@@ -23,16 +24,11 @@ import (
 //go:embed write.md
 var writeDescription []byte
 
-type WriteParams struct {
-	FilePath string `json:"file_path"`
-	Content  string `json:"content"`
-}
-
-type WritePermissionsParams struct {
-	FilePath   string `json:"file_path"`
-	OldContent string `json:"old_content,omitempty"`
-	NewContent string `json:"new_content,omitempty"`
-}
+type (
+	WriteParams            = proto.WriteParams
+	WritePermissionsParams = proto.WritePermissionsParams
+	WriteResponseMetadata  = proto.WriteResponseMetadata
+)
 
 type writeTool struct {
 	lspClients  *csync.Map[string, *lsp.Client]
@@ -41,13 +37,7 @@ type writeTool struct {
 	workingDir  string
 }
 
-type WriteResponseMetadata struct {
-	Diff      string `json:"diff"`
-	Additions int    `json:"additions"`
-	Removals  int    `json:"removals"`
-}
-
-const WriteToolName = "write"
+const WriteToolName = proto.WriteToolName
 
 func NewWriteTool(lspClients *csync.Map[string, *lsp.Client], permissions permission.Service, files history.Service, workingDir string) BaseTool {
 	return &writeTool{

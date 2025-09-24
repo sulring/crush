@@ -13,22 +13,18 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
-const GlobToolName = "glob"
+const GlobToolName = proto.GlobToolName
 
 //go:embed glob.md
 var globDescription []byte
 
-type GlobParams struct {
-	Pattern string `json:"pattern"`
-	Path    string `json:"path"`
-}
-
-type GlobResponseMetadata struct {
-	NumberOfFiles int  `json:"number_of_files"`
-	Truncated     bool `json:"truncated"`
-}
+type (
+	GlobParams           = proto.GlobParams
+	GlobResponseMetadata = proto.GlobResponseMetadata
+)
 
 type globTool struct {
 	workingDir string

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
 // regexCache provides thread-safe caching of compiled regex patterns
@@ -70,13 +71,6 @@ var (
 	globBraceRegex = regexp.MustCompile(`\{([^}]+)\}`)
 )
 
-type GrepParams struct {
-	Pattern     string `json:"pattern"`
-	Path        string `json:"path"`
-	Include     string `json:"include"`
-	LiteralText bool   `json:"literal_text"`
-}
-
 type grepMatch struct {
 	path     string
 	modTime  time.Time
@@ -84,16 +78,16 @@ type grepMatch struct {
 	lineText string
 }
 
-type GrepResponseMetadata struct {
-	NumberOfMatches int  `json:"number_of_matches"`
-	Truncated       bool `json:"truncated"`
-}
+type (
+	GrepParams           = proto.GrepParams
+	GrepResponseMetadata = proto.GrepResponseMetadata
+)
 
 type grepTool struct {
 	workingDir string
 }
 
-const GrepToolName = "grep"
+const GrepToolName = proto.GrepToolName
 
 //go:embed grep.md
 var grepDescription []byte

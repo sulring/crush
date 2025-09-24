@@ -15,30 +15,17 @@ import (
 	"github.com/charmbracelet/crush/internal/diff"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
+	"github.com/charmbracelet/crush/internal/proto"
 
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/permission"
 )
 
-type EditParams struct {
-	FilePath   string `json:"file_path"`
-	OldString  string `json:"old_string"`
-	NewString  string `json:"new_string"`
-	ReplaceAll bool   `json:"replace_all,omitempty"`
-}
-
-type EditPermissionsParams struct {
-	FilePath   string `json:"file_path"`
-	OldContent string `json:"old_content,omitempty"`
-	NewContent string `json:"new_content,omitempty"`
-}
-
-type EditResponseMetadata struct {
-	Additions  int    `json:"additions"`
-	Removals   int    `json:"removals"`
-	OldContent string `json:"old_content,omitempty"`
-	NewContent string `json:"new_content,omitempty"`
-}
+type (
+	EditParams            = proto.EditParams
+	EditPermissionsParams = proto.EditPermissionsParams
+	EditResponseMetadata  = proto.EditResponseMetadata
+)
 
 type editTool struct {
 	lspClients  *csync.Map[string, *lsp.Client]
@@ -47,7 +34,7 @@ type editTool struct {
 	workingDir  string
 }
 
-const EditToolName = "edit"
+const EditToolName = proto.EditToolName
 
 //go:embed edit.md
 var editDescription []byte

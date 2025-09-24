@@ -12,12 +12,11 @@ import (
 
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/lsp"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
-type DiagnosticsParams struct {
-	FilePath string `json:"file_path"`
-}
+type DiagnosticsParams = proto.DiagnosticsParams
 
 type diagnosticsTool struct {
 	lspClients *csync.Map[string, *lsp.Client]

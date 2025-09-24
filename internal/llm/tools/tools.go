@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
 type ToolInfo struct {
@@ -12,27 +14,20 @@ type ToolInfo struct {
 	Required    []string
 }
 
-type toolResponseType string
-
 type (
 	sessionIDContextKey string
 	messageIDContextKey string
 )
 
 const (
-	ToolResponseTypeText  toolResponseType = "text"
-	ToolResponseTypeImage toolResponseType = "image"
+	ToolResponseTypeText  = proto.ToolResponseTypeText
+	ToolResponseTypeImage = proto.ToolResponseTypeImage
 
 	SessionIDContextKey sessionIDContextKey = "session_id"
 	MessageIDContextKey messageIDContextKey = "message_id"
 )
 
-type ToolResponse struct {
-	Type     toolResponseType `json:"type"`
-	Content  string           `json:"content"`
-	Metadata string           `json:"metadata,omitempty"`
-	IsError  bool             `json:"is_error"`
-}
+type ToolResponse = proto.ToolResponse
 
 func NewTextResponse(content string) ToolResponse {
 	return ToolResponse{
@@ -60,11 +55,7 @@ func NewTextErrorResponse(content string) ToolResponse {
 	}
 }
 
-type ToolCall struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Input string `json:"input"`
-}
+type ToolCall = proto.ToolCall
 
 type BaseTool interface {
 	Info() ToolInfo

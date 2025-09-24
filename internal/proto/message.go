@@ -125,8 +125,8 @@ type ToolCall struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Input    string `json:"input"`
-	Type     string `json:"type"`
-	Finished bool   `json:"finished"`
+	Type     string `json:"type,omitempty"`
+	Finished bool   `json:"finished,omitempty"`
 }
 
 func (ToolCall) isPart() {}

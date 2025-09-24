@@ -17,32 +17,16 @@ import (
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
-type MultiEditOperation struct {
-	OldString  string `json:"old_string"`
-	NewString  string `json:"new_string"`
-	ReplaceAll bool   `json:"replace_all,omitempty"`
-}
+type (
+	MultiEditOperation = proto.MultiEditOperation
+	MultiEditParams    = proto.MultiEditParams
 
-type MultiEditParams struct {
-	FilePath string               `json:"file_path"`
-	Edits    []MultiEditOperation `json:"edits"`
-}
-
-type MultiEditPermissionsParams struct {
-	FilePath   string `json:"file_path"`
-	OldContent string `json:"old_content,omitempty"`
-	NewContent string `json:"new_content,omitempty"`
-}
-
-type MultiEditResponseMetadata struct {
-	Additions    int    `json:"additions"`
-	Removals     int    `json:"removals"`
-	OldContent   string `json:"old_content,omitempty"`
-	NewContent   string `json:"new_content,omitempty"`
-	EditsApplied int    `json:"edits_applied"`
-}
+	MultiEditPermissionsParams = proto.MultiEditPermissionsParams
+	MultiEditResponseMetadata  = proto.MultiEditResponseMetadata
+)
 
 type multiEditTool struct {
 	lspClients  *csync.Map[string, *lsp.Client]
@@ -51,7 +35,7 @@ type multiEditTool struct {
 	workingDir  string
 }
 
-const MultiEditToolName = "multiedit"
+const MultiEditToolName = proto.MultiEditToolName
 
 //go:embed multiedit.md
 var multieditDescription []byte

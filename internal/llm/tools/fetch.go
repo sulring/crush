@@ -14,19 +14,13 @@ import (
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 )
 
-type FetchParams struct {
-	URL     string `json:"url"`
-	Format  string `json:"format"`
-	Timeout int    `json:"timeout,omitempty"`
-}
-
-type FetchPermissionsParams struct {
-	URL     string `json:"url"`
-	Format  string `json:"format"`
-	Timeout int    `json:"timeout,omitempty"`
-}
+type (
+	FetchParams            = proto.FetchParams
+	FetchPermissionsParams = proto.FetchPermissionsParams
+)
 
 type fetchTool struct {
 	client      *http.Client
@@ -34,7 +28,7 @@ type fetchTool struct {
 	workingDir  string
 }
 
-const FetchToolName = "fetch"
+const FetchToolName = proto.FetchToolName
 
 //go:embed fetch.md
 var fetchDescription []byte
