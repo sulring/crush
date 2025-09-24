@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,13 +72,60 @@ crush run "Explain the use of context in Go"
 crush -y
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := ensureServerRunning(cmd); err != nil {
+		hostURL, err := server.ParseHostURL(clientHost)
+		if err != nil {
+			return fmt.Errorf("invalid host URL: %v", err)
+		}
+
+		switch hostURL.Scheme {
+		case "unix", "npipe":
+			_, err := os.Stat(hostURL.Host)
+			if err != nil && errors.Is(err, fs.ErrNotExist) {
+				slog.Info("Starting server...", "host", clientHost)
+				if err := startDetachedServer(cmd); err != nil {
+					return err
+				}
+			}
+
+			// Wait for the file to appear
+			for range 10 {
+				_, err = os.Stat(hostURL.Host)
+				if err == nil {
+					break
+				}
+				select {
+				case <-cmd.Context().Done():
+					return cmd.Context().Err()
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+			if err != nil {
+				return fmt.Errorf("failed to connect to crush server: %v", err)
+			}
+
+		default:
+			// TODO: implement TCP support
+		}
+
+		c, err := setupApp(cmd, hostURL)
+		if err != nil {
 			return err
 		}
 
-		c, err := setupApp(cmd)
-		if err != nil {
-			return err
+		tries := 5
+		for i := range tries {
+			err := c.Health()
+			if err == nil {
+				break
+			}
+			select {
+			case <-cmd.Context().Done():
+				return cmd.Context().Err()
+			case <-time.After(100 * time.Millisecond):
+			}
+			if i == tries-1 {
+				return fmt.Errorf("failed to connect to crush server after %d attempts: %v", tries, err)
+			}
 		}
 
 		m, err := tui.New(c)
@@ -145,7 +193,7 @@ func streamEvents(ctx context.Context, evc <-chan any, p *tea.Program) {
 
 // setupApp handles the common setup logic for both interactive and non-interactive modes.
 // It returns the app instance, config, cleanup function, and any error.
-func setupApp(cmd *cobra.Command) (*client.Client, error) {
+func setupApp(cmd *cobra.Command, hostURL *url.URL) (*client.Client, error) {
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
@@ -156,7 +204,7 @@ func setupApp(cmd *cobra.Command) (*client.Client, error) {
 		return nil, err
 	}
 
-	c, err := client.NewClient(cwd, "unix", clientHost)
+	c, err := client.NewClient(cwd, hostURL.Scheme, hostURL.Host)
 	if err != nil {
 		return nil, err
 	}
@@ -178,17 +226,7 @@ func setupApp(cmd *cobra.Command) (*client.Client, error) {
 
 var safeNameRegexp = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
-func ensureServerRunning(cmd *cobra.Command) error {
-	stat, err := os.Stat(clientHost)
-	if err == nil && stat.Mode()&os.ModeSocket == 0 {
-		return fmt.Errorf("crush server socket path exists but is not a socket: %s", clientHost)
-	} else if err == nil && stat.Mode()&os.ModeSocket != 0 {
-		// Socket exists, assume server is running.
-		return nil
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("failed to stat crush server socket: %v", err)
-	}
-
+func startDetachedServer(cmd *cobra.Command) error {
 	// Start the server as a detached process if the socket does not exist.
 	exe, err := os.Executable()
 	if err != nil {
@@ -204,7 +242,7 @@ func ensureServerRunning(cmd *cobra.Command) error {
 	c := exec.CommandContext(cmd.Context(), exe, "server")
 	stdoutPath := filepath.Join(chDir, "stdout.log")
 	stderrPath := filepath.Join(chDir, "stderr.log")
-	detachProcess(c, stdoutPath, stderrPath)
+	detachProcess(c)
 
 	stdout, err := os.Create(stdoutPath)
 	if err != nil {
@@ -226,23 +264,6 @@ func ensureServerRunning(cmd *cobra.Command) error {
 
 	if err := c.Process.Release(); err != nil {
 		return fmt.Errorf("failed to detach crush server process: %v", err)
-	}
-
-	// Wait for the server to start and create the socket.
-	for range 10 {
-		stat, err := os.Stat(clientHost)
-		if err == nil && stat.Mode()&os.ModeSocket != 0 {
-			// Socket exists, server is running.
-			return nil
-		} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("failed to stat crush server socket: %v", err)
-		}
-		// Sleep for 100ms before checking again.
-		select {
-		case <-cmd.Context().Done():
-			return fmt.Errorf("context cancelled while waiting for crush server to start")
-		case <-time.After(100 * time.Millisecond):
-		}
 	}
 
 	return nil

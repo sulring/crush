@@ -5,18 +5,14 @@ package cmd
 
 import (
 	"os/exec"
+	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
-func detachProcess(c *exec.Cmd, stdoutPath, stderrPath string) {
-	argv1 := c.Args[0]
-	c.Path = "cmd"
-	c.Args = []string{
-		"cmd",
-		"/c",
-		argv1,
-		">",
-		stdoutPath,
-		"2>",
-		stderrPath,
+func detachProcess(c *exec.Cmd) {
+	if c.SysProcAttr == nil {
+		c.SysProcAttr = &syscall.SysProcAttr{}
 	}
+	c.SysProcAttr.CreationFlags = syscall.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS
 }

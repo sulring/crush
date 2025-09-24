@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os/user"
 	"runtime"
 	"strings"
@@ -51,6 +52,29 @@ func (i *Instance) Path() string {
 	return i.path
 }
 
+// ParseHostURL parses a host URL into a [url.URL].
+func ParseHostURL(host string) (*url.URL, error) {
+	proto, addr, ok := strings.Cut(host, "://")
+	if !ok {
+		return nil, fmt.Errorf("invalid host format: %s", host)
+	}
+
+	var basePath string
+	if proto == "tcp" {
+		parsed, err := url.Parse("tcp://" + addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid tcp address: %v", err)
+		}
+		addr = parsed.Host
+		basePath = parsed.Path
+	}
+	return &url.URL{
+		Scheme: proto,
+		Host:   addr,
+		Path:   basePath,
+	}, nil
+}
+
 // DefaultHost returns the default server host.
 func DefaultHost() string {
 	sock := "crush.sock"
@@ -86,11 +110,11 @@ func (s *Server) SetLogger(logger *slog.Logger) {
 
 // DefaultServer returns a new [Server] instance with the default address.
 func DefaultServer(cfg *config.Config) *Server {
-	proto, addr, ok := strings.Cut(DefaultHost(), "://")
-	if !ok {
+	hostURL, err := ParseHostURL(DefaultHost())
+	if err != nil {
 		panic("invalid default host")
 	}
-	return NewServer(cfg, proto, addr)
+	return NewServer(cfg, hostURL.Scheme, hostURL.Host)
 }
 
 // NewServer is a helper to create a new [Server] instance with the given

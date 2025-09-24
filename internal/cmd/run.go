@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/charmbracelet/crush/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -25,8 +26,12 @@ crush run -q "Generate a README for this project"
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		quiet, _ := cmd.Flags().GetBool("quiet")
+		hostURL, err := server.ParseHostURL(clientHost)
+		if err != nil {
+			return fmt.Errorf("invalid host URL: %v", err)
+		}
 
-		c, err := setupApp(cmd)
+		c, err := setupApp(cmd, hostURL)
 		if err != nil {
 			return err
 		}

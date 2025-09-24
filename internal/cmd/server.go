@@ -43,7 +43,12 @@ var serverCmd = &cobra.Command{
 			slog.SetLogLoggerLevel(slog.LevelDebug)
 		}
 
-		srv := server.NewServer(cfg, "unix", serverHost)
+		hostURL, err := server.ParseHostURL(serverHost)
+		if err != nil {
+			return fmt.Errorf("invalid server host: %v", err)
+		}
+
+		srv := server.NewServer(cfg, hostURL.Scheme, hostURL.Host)
 		srv.SetLogger(slog.Default())
 		slog.Info("Starting Crush server...", "addr", srv.Addr)
 

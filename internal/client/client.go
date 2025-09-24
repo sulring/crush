@@ -7,8 +7,6 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
@@ -16,39 +14,49 @@ import (
 	"github.com/charmbracelet/crush/internal/server"
 )
 
+// DummyHost is used to satisfy the http.Client's requirement for a URL.
+const DummyHost = "api.crush.localhost"
+
 // Client represents an RPC client connected to a Crush server.
 type Client struct {
-	h    *http.Client
-	id   string
-	path string
+	h     *http.Client
+	id    string
+	path  string
+	proto string
+	addr  string
 }
 
 // DefaultClient creates a new [Client] connected to the default server address.
 func DefaultClient(path string) (*Client, error) {
-	proto, addr, ok := strings.Cut(server.DefaultHost(), "://")
-	if !ok {
-		return nil, fmt.Errorf("failed to determine default server address for platform %s", runtime.GOOS)
+	host, err := server.ParseHostURL(server.DefaultHost())
+	if err != nil {
+		return nil, err
 	}
-	return NewClient(path, proto, addr)
+	return NewClient(path, host.Scheme, host.Host)
 }
 
 // NewClient creates a new [Client] connected to the server at the given
 // network and address.
 func NewClient(path, network, address string) (*Client, error) {
-	var p http.Protocols
+	c := new(Client)
+	c.path = filepath.Clean(path)
+	c.proto = network
+	c.addr = address
+	p := &http.Protocols{}
 	p.SetHTTP1(true)
 	p.SetUnencryptedHTTP2(true)
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.Protocols = &p
-	tr.DialContext = dialer
-	h := &http.Client{
+	tr.Protocols = p
+	tr.DialContext = c.dialer
+	if c.proto == "npipe" || c.proto == "unix" {
+		// We don't need compression for local connections.
+		tr.DisableCompression = true
+	}
+	c.h = &http.Client{
 		Transport: tr,
 		Timeout:   0, // we need this to be 0 for long-lived connections and SSE streams
 	}
-	return &Client{
-		h:    h,
-		path: filepath.Clean(path),
-	}, nil
+	return c, nil
 }
 
 // ID returns the client's instance unique identifier.
@@ -126,17 +134,19 @@ func (c *Client) ShutdownServer() error {
 	return nil
 }
 
-func dialer(ctx context.Context, network, address string) (net.Conn, error) {
-	switch network {
+func (c *Client) dialer(ctx context.Context, network, address string) (net.Conn, error) {
+	d := net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	switch c.proto {
 	case "npipe":
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		return dialPipeContext(ctx, address)
+		return dialPipeContext(ctx, c.addr)
+	case "unix":
+		return d.DialContext(ctx, "unix", c.addr)
 	default:
-		d := net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}
 		return d.DialContext(ctx, network, address)
 	}
 }

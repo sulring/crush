@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-func detachProcess(c *exec.Cmd, _, _ string) {
+func detachProcess(c *exec.Cmd) {
 	if c.SysProcAttr == nil {
 		c.SysProcAttr = &syscall.SysProcAttr{}
 	}
