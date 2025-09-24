@@ -51,18 +51,17 @@ func (i *Instance) Path() string {
 	return i.path
 }
 
-// DefaultAddr returns the default address path for the Crush server based on
-// the operating system.
-func DefaultAddr() string {
-	sockPath := "crush.sock"
-	user, err := user.Current()
-	if err == nil && user.Uid != "" {
-		sockPath = fmt.Sprintf("crush-%s.sock", user.Uid)
+// DefaultHost returns the default server host.
+func DefaultHost() string {
+	sock := "crush.sock"
+	usr, err := user.Current()
+	if err == nil && usr.Uid != "" {
+		sock = fmt.Sprintf("crush-%s.sock", usr.Uid)
 	}
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf(`\\.\pipe\%s`, sockPath)
+		return fmt.Sprintf("npipe:////./pipe/%s", sock)
 	}
-	return fmt.Sprintf("/tmp/%s", sockPath)
+	return fmt.Sprintf("unix:///tmp/%s", sock)
 }
 
 // Server represents a Crush server instance bound to a specific address.
@@ -87,20 +86,17 @@ func (s *Server) SetLogger(logger *slog.Logger) {
 
 // DefaultServer returns a new [Server] instance with the default address.
 func DefaultServer(cfg *config.Config) *Server {
-	return NewServer(cfg, "unix", DefaultAddr())
+	proto, addr, ok := strings.Cut(DefaultHost(), "://")
+	if !ok {
+		panic("invalid default host")
+	}
+	return NewServer(cfg, proto, addr)
 }
 
 // NewServer is a helper to create a new [Server] instance with the given
 // address. On Windows, if the address is not a "tcp" address, it will be
 // converted to a named pipe format.
 func NewServer(cfg *config.Config, network, address string) *Server {
-	if runtime.GOOS == "windows" && !strings.HasPrefix(address, "tcp") &&
-		!strings.HasPrefix(address, `\\.\pipe\`) {
-		// On Windows, convert to named pipe format if not TCP
-		// (e.g., "mypipe" -> "\\.\pipe\mypipe")
-		address = fmt.Sprintf(`\\.\pipe\%s`, address)
-	}
-
 	s := new(Server)
 	s.Addr = address
 	s.cfg = cfg
@@ -157,7 +153,11 @@ func (s *Server) ListenAndServe() error {
 	if s.ln != nil {
 		return fmt.Errorf("server already started")
 	}
-	ln, err := listen("unix", s.Addr)
+	proto := "unix"
+	if runtime.GOOS == "windows" {
+		proto = "npipe"
+	}
+	ln, err := listen(proto, s.Addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", s.Addr, err)
 	}

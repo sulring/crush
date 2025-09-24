@@ -87,6 +87,6 @@ var serverCmd = &cobra.Command{
 }
 
 func init() {
-	serverCmd.Flags().StringVar(&serverHost, "host", server.DefaultAddr(), "Server host (TCP or Unix socket)")
+	serverCmd.Flags().StringVar(&serverHost, "host", server.DefaultHost(), "Server host (TCP or Unix socket)")
 	rootCmd.AddCommand(serverCmd)
 }

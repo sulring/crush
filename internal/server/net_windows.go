@@ -5,14 +5,19 @@ package server
 
 import (
 	"net"
-	"strings"
 
 	"github.com/Microsoft/go-winio"
 )
 
 func listen(network, address string) (net.Listener, error) {
-	if !strings.HasPrefix(address, "tcp") {
-		return winio.ListenPipe(address, nil)
+	switch network {
+	case "npipe":
+		return winio.ListenPipe(address, &winio.PipeConfig{
+			MessageMode:      true,
+			InputBufferSize:  65536,
+			OutputBufferSize: 65536,
+		})
+	default:
+		return net.Listen(network, address)
 	}
-	return net.Listen(network, address)
 }

@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
@@ -23,7 +25,11 @@ type Client struct {
 
 // DefaultClient creates a new [Client] connected to the default server address.
 func DefaultClient(path string) (*Client, error) {
-	return NewClient(path, "unix", server.DefaultAddr())
+	proto, addr, ok := strings.Cut(server.DefaultHost(), "://")
+	if !ok {
+		return nil, fmt.Errorf("failed to determine default server address for platform %s", runtime.GOOS)
+	}
+	return NewClient(path, proto, addr)
 }
 
 // NewClient creates a new [Client] connected to the server at the given
@@ -34,13 +40,7 @@ func NewClient(path, network, address string) (*Client, error) {
 	p.SetUnencryptedHTTP2(true)
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.Protocols = &p
-	tr.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
-		d := net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}
-		return d.DialContext(ctx, network, address)
-	}
+	tr.DialContext = dialer
 	h := &http.Client{
 		Transport: tr,
 		Timeout:   0, // we need this to be 0 for long-lived connections and SSE streams
@@ -124,4 +124,19 @@ func (c *Client) ShutdownServer() error {
 		return fmt.Errorf("server shutdown failed: %s", rsp.Status)
 	}
 	return nil
+}
+
+func dialer(ctx context.Context, network, address string) (net.Conn, error) {
+	switch network {
+	case "npipe":
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		return dialPipeContext(ctx, address)
+	default:
+		d := net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
+		return d.DialContext(ctx, network, address)
+	}
 }

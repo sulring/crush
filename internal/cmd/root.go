@@ -36,7 +36,7 @@ func init() {
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
 
-	rootCmd.Flags().StringVar(&clientHost, "host", server.DefaultAddr(), "Connect to a specific crush server host (for advanced users)")
+	rootCmd.Flags().StringVar(&clientHost, "host", server.DefaultHost(), "Connect to a specific crush server host (for advanced users)")
 
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(updateProvidersCmd)
