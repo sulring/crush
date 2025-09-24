@@ -6,9 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"os/user"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -64,7 +62,7 @@ func DefaultAddr() string {
 	if runtime.GOOS == "windows" {
 		return fmt.Sprintf(`\\.\pipe\%s`, sockPath)
 	}
-	return filepath.Join(os.TempDir(), sockPath)
+	return fmt.Sprintf("/tmp/%s", sockPath)
 }
 
 // Server represents a Crush server instance bound to a specific address.
