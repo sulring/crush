@@ -17,13 +17,13 @@ type Shell interface {
 	Exec(ctx context.Context, command string) (stdout, stderr string, err error)
 }
 
-type shellVariableResolver struct {
+type ShellVariableResolver struct {
 	shell Shell
 	env   []string
 }
 
-func NewShellVariableResolver(env []string) VariableResolver {
-	return &shellVariableResolver{
+func NewShellVariableResolver(env []string) *ShellVariableResolver {
+	return &ShellVariableResolver{
 		env: env,
 		shell: shell.NewShell(
 			&shell.Options{
@@ -38,7 +38,7 @@ func NewShellVariableResolver(env []string) VariableResolver {
 // - $(command) for command substitution
 // - $VAR or ${VAR} for environment variables
 // TODO: can we replace this with [os.Expand](https://pkg.go.dev/os#Expand) somehow?
-func (r *shellVariableResolver) ResolveValue(value string) (string, error) {
+func (r *ShellVariableResolver) ResolveValue(value string) (string, error) {
 	// Special case: lone $ is an error (backward compatibility)
 	if value == "$" {
 		return "", fmt.Errorf("invalid value format: %s", value)

@@ -81,7 +81,7 @@ func createAnthropicClient(opts providerClientOptions, tp AnthropicClientType) a
 	}
 
 	if opts.baseURL != "" {
-		resolvedBaseURL, err := opts.cfg.Resolve(opts.baseURL)
+		resolvedBaseURL, err := opts.resolver.ResolveValue(opts.baseURL)
 		if err == nil && resolvedBaseURL != "" {
 			anthropicClientOptions = append(anthropicClientOptions, option.WithBaseURL(resolvedBaseURL))
 		}
@@ -496,7 +496,7 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 	if apiErr.StatusCode == http.StatusUnauthorized {
 		prev := a.providerOptions.apiKey
 		// in case the key comes from a script, we try to re-evaluate it.
-		a.providerOptions.apiKey, err = a.providerOptions.cfg.Resolve(a.providerOptions.config.APIKey)
+		a.providerOptions.apiKey, err = a.providerOptions.resolver.ResolveValue(a.providerOptions.config.APIKey)
 		if err != nil {
 			return false, 0, fmt.Errorf("failed to resolve API key: %w", err)
 		}

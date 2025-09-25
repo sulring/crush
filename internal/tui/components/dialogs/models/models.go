@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs"
 	"github.com/charmbracelet/crush/internal/tui/exp/list"
@@ -68,10 +69,10 @@ type modelDialogCmp struct {
 	isAPIKeyValid     bool
 	apiKeyValue       string
 
-	cfg *config.Config
+	ins *proto.Instance
 }
 
-func NewModelDialogCmp(cfg *config.Config) ModelDialog {
+func NewModelDialogCmp(ins *proto.Instance) ModelDialog {
 	keyMap := DefaultKeyMap()
 
 	listKeyMap := list.DefaultKeyMap()
@@ -81,7 +82,7 @@ func NewModelDialogCmp(cfg *config.Config) ModelDialog {
 	listKeyMap.UpOneItem = keyMap.Previous
 
 	t := styles.CurrentTheme()
-	modelList := NewModelListComponent(cfg, listKeyMap, largeModelInputPlaceholder, true)
+	modelList := NewModelListComponent(ins.Config, listKeyMap, largeModelInputPlaceholder, true)
 	apiKeyInput := NewAPIKeyInput()
 	apiKeyInput.SetShowTitle(false)
 	help := help.New()
@@ -93,7 +94,7 @@ func NewModelDialogCmp(cfg *config.Config) ModelDialog {
 		width:       defaultWidth,
 		keyMap:      DefaultKeyMap(),
 		help:        help,
-		cfg:         cfg,
+		ins:         ins,
 	}
 }
 
@@ -139,7 +140,7 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}),
 					func() tea.Msg {
 						start := time.Now()
-						err := providerConfig.TestConnection(m.cfg.Resolver())
+						err := providerConfig.TestConnection(m.ins.ShellResolver())
 						// intentionally wait for at least 750ms to make sure the user sees the spinner
 						elapsed := time.Since(start)
 						if elapsed < 750*time.Millisecond {
@@ -347,14 +348,14 @@ func (m *modelDialogCmp) modelTypeRadio() string {
 }
 
 func (m *modelDialogCmp) isProviderConfigured(providerID string) bool {
-	if _, ok := m.cfg.Providers.Get(providerID); ok {
+	if _, ok := m.ins.Config.Providers.Get(providerID); ok {
 		return true
 	}
 	return false
 }
 
 func (m *modelDialogCmp) getProvider(providerID catwalk.InferenceProvider) (*catwalk.Provider, error) {
-	providers, err := config.Providers(m.cfg)
+	providers, err := config.Providers(m.ins.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +372,7 @@ func (m *modelDialogCmp) saveAPIKeyAndContinue(apiKey string) tea.Cmd {
 		return util.ReportError(fmt.Errorf("no model selected"))
 	}
 
-	err := m.cfg.SetProviderAPIKey(string(m.selectedModel.Provider.ID), apiKey)
+	err := m.ins.Config.SetProviderAPIKey(string(m.selectedModel.Provider.ID), apiKey)
 	if err != nil {
 		return util.ReportError(fmt.Errorf("failed to save API key: %w", err))
 	}

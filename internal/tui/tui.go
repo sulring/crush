@@ -178,7 +178,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commands.SwitchModelMsg:
 		return a, util.CmdHandler(
 			dialogs.OpenDialogMsg{
-				Model: models.NewModelDialogCmp(a.ins.Config),
+				Model: models.NewModelDialogCmp(a.ins),
 			},
 		)
 	// Compact

@@ -460,6 +460,19 @@ func (c *controllerV1) handleGetInstancePermissionsSkip(w http.ResponseWriter, r
 	jsonEncode(w, proto.PermissionSkipRequest{Skip: skip})
 }
 
+func (c *controllerV1) handleGetInstanceProviders(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	ins, ok := c.instances.Get(id)
+	if !ok {
+		c.logError(r, "instance not found", "id", id)
+		jsonError(w, http.StatusNotFound, "instance not found")
+		return
+	}
+
+	providers, _ := config.Providers(ins.cfg)
+	jsonEncode(w, providers)
+}
+
 func (c *controllerV1) handleGetInstanceEvents(w http.ResponseWriter, r *http.Request) {
 	flusher := http.NewResponseController(w)
 	id := r.PathValue("id")
@@ -587,6 +600,7 @@ func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Reques
 		id:    id,
 		path:  args.Path,
 		cfg:   cfg,
+		env:   args.Env,
 	}
 
 	c.instances.Set(id, ins)
@@ -597,6 +611,7 @@ func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Reques
 		Debug:   cfg.Options.Debug,
 		YOLO:    cfg.Permissions.SkipRequests,
 		Config:  cfg,
+		Env:     args.Env,
 	})
 }
 

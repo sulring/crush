@@ -67,7 +67,6 @@ func Load(workingDir, dataDir string, debug bool, envs []string) (*Config, error
 
 	// Configure providers
 	valueResolver := NewShellVariableResolver(envs)
-	cfg.resolver = valueResolver
 	if err := cfg.configureProviders(envs, valueResolver, cfg.knownProviders); err != nil {
 		return nil, fmt.Errorf("failed to configure providers: %w", err)
 	}

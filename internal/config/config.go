@@ -16,6 +16,12 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+// OsShellResolver is a shell resolver that uses the current process environment
+// variables.
+//
+// Deprecated: pass resolver explicitly instead.
+var OsShellResolver = NewShellVariableResolver(os.Environ())
+
 const (
 	defaultDataDirectory = ".crush"
 )
@@ -267,7 +273,6 @@ type Config struct {
 	// TODO: most likely remove this concept when I come back to it
 	Agents map[string]Agent `json:"-"`
 	// TODO: find a better way to do this this should probably not be part of the config
-	resolver       VariableResolver
 	dataConfigDir  string             `json:"-"`
 	knownProviders []catwalk.Provider `json:"-"`
 }
@@ -343,13 +348,6 @@ func (c *Config) SetCompactMode(enabled bool) error {
 	}
 	c.Options.TUI.CompactMode = enabled
 	return c.SetConfigField("options.tui.compact_mode", enabled)
-}
-
-func (c *Config) Resolve(key string) (string, error) {
-	if c.resolver == nil {
-		return "", fmt.Errorf("no variable resolver configured")
-	}
-	return c.resolver.ResolveValue(key)
 }
 
 func (c *Config) UpdatePreferredModel(modelType SelectedModelType, model SelectedModel) error {
@@ -492,10 +490,6 @@ func (c *Config) SetupAgents() {
 		},
 	}
 	c.Agents = agents
-}
-
-func (c *Config) Resolver() VariableResolver {
-	return c.resolver
 }
 
 func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {

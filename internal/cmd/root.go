@@ -220,6 +220,7 @@ func setupApp(cmd *cobra.Command, hostURL *url.URL) (*client.Client, *proto.Inst
 		DataDir: dataDir,
 		Debug:   debug,
 		YOLO:    yolo,
+		Env:     os.Environ(),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create or connect to instance: %v", err)

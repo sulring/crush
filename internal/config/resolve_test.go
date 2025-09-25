@@ -76,7 +76,7 @@ func TestShellVariableResolver_ResolveValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testEnv := environ(tt.envVars)
-			resolver := &shellVariableResolver{
+			resolver := &ShellVariableResolver{
 				shell: &mockShell{execFunc: tt.shellFunc},
 				env:   testEnv,
 			}
@@ -241,7 +241,7 @@ func TestShellVariableResolver_EnhancedResolveValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testEnv := environ(tt.envVars)
-			resolver := &shellVariableResolver{
+			resolver := &ShellVariableResolver{
 				shell: &mockShell{execFunc: tt.shellFunc},
 				env:   testEnv,
 			}

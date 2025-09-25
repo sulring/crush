@@ -17,6 +17,13 @@ type Instance struct {
 	Debug   bool           `json:"debug,omitempty"`
 	DataDir string         `json:"data_dir,omitempty"`
 	Config  *config.Config `json:"config,omitempty"`
+	Env     []string       `json:"env,omitempty"`
+}
+
+// ShellResolver returns a new [config.ShellResolver] based on the instance's
+// environment variables.
+func (i Instance) ShellResolver() *config.ShellVariableResolver {
+	return config.NewShellVariableResolver(i.Env)
 }
 
 // Error represents an error response.

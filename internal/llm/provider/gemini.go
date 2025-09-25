@@ -438,7 +438,7 @@ func (g *geminiClient) shouldRetry(attempts int, err error) (bool, int64, error)
 	if contains(errMsg, "unauthorized", "invalid api key", "api key expired") {
 		prev := g.providerOptions.apiKey
 		// in case the key comes from a script, we try to re-evaluate it.
-		g.providerOptions.apiKey, err = g.providerOptions.cfg.Resolve(g.providerOptions.config.APIKey)
+		g.providerOptions.apiKey, err = g.providerOptions.resolver.ResolveValue(g.providerOptions.config.APIKey)
 		if err != nil {
 			return false, 0, fmt.Errorf("failed to resolve API key: %w", err)
 		}

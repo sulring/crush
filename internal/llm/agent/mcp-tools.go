@@ -136,7 +136,7 @@ func getOrRenewClient(ctx context.Context, cfg *config.Config, name string) (*cl
 	}
 	updateMCPState(name, MCPStateError, maybeTimeoutErr(err, timeout), nil, state.ToolCount)
 
-	c, err = createAndInitializeClient(ctx, name, m, cfg.Resolver())
+	c, err = createAndInitializeClient(ctx, name, m, config.OsShellResolver)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +288,7 @@ func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *con
 
 			ctx, cancel := context.WithTimeout(ctx, mcpTimeout(m))
 			defer cancel()
-			c, err := createAndInitializeClient(ctx, name, m, cfg.Resolver())
+			c, err := createAndInitializeClient(ctx, name, m, config.OsShellResolver)
 			if err != nil {
 				return
 			}

@@ -40,6 +40,7 @@ type Instance struct {
 	cfg   *config.Config
 	id    string
 	path  string
+	env   []string
 }
 
 // ParseHostURL parses a host URL into a [url.URL].
@@ -134,6 +135,7 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	mux.HandleFunc("GET /v1/instances/{id}", c.handleGetInstance)
 	mux.HandleFunc("GET /v1/instances/{id}/config", c.handleGetInstanceConfig)
 	mux.HandleFunc("GET /v1/instances/{id}/events", c.handleGetInstanceEvents)
+	mux.HandleFunc("GET /v1/instances/{id}/providers", c.handleGetInstanceProviders)
 	mux.HandleFunc("GET /v1/instances/{id}/sessions", c.handleGetInstanceSessions)
 	mux.HandleFunc("POST /v1/instances/{id}/sessions", c.handlePostInstanceSessions)
 	mux.HandleFunc("GET /v1/instances/{id}/sessions/{sid}", c.handleGetInstanceSession)

@@ -64,6 +64,8 @@ type Provider interface {
 type providerClientOptions struct {
 	cfg *config.Config
 
+	resolver config.VariableResolver
+
 	baseURL            string
 	config             config.ProviderConfig
 	apiKey             string
@@ -141,30 +143,17 @@ func WithMaxTokens(maxTokens int64) ProviderClientOption {
 	}
 }
 
+func WithResolver(resolver config.VariableResolver) ProviderClientOption {
+	return func(options *providerClientOptions) {
+		options.resolver = resolver
+	}
+}
+
 func NewProvider(cfg *config.Config, pcfg config.ProviderConfig, opts ...ProviderClientOption) (Provider, error) {
-	restore := config.PushPopCrushEnv()
-	defer restore()
-	resolvedAPIKey, err := cfg.Resolve(pcfg.APIKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve API key for provider %s: %w", pcfg.ID, err)
-	}
-
-	// Resolve extra headers
-	resolvedExtraHeaders := make(map[string]string)
-	for key, value := range pcfg.ExtraHeaders {
-		resolvedValue, err := cfg.Resolve(value)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve extra header %s for provider %s: %w", key, pcfg.ID, err)
-		}
-		resolvedExtraHeaders[key] = resolvedValue
-	}
-
 	clientOptions := providerClientOptions{
 		cfg:                cfg,
 		baseURL:            pcfg.BaseURL,
 		config:             pcfg,
-		apiKey:             resolvedAPIKey,
-		extraHeaders:       resolvedExtraHeaders,
 		extraBody:          pcfg.ExtraBody,
 		extraParams:        pcfg.ExtraParams,
 		systemPromptPrefix: pcfg.SystemPromptPrefix,
@@ -175,6 +164,30 @@ func NewProvider(cfg *config.Config, pcfg config.ProviderConfig, opts ...Provide
 	for _, o := range opts {
 		o(&clientOptions)
 	}
+	if clientOptions.resolver == nil {
+		clientOptions.resolver = config.OsShellResolver
+	}
+
+	restore := config.PushPopCrushEnv()
+	defer restore()
+	resolvedAPIKey, err := clientOptions.resolver.ResolveValue(pcfg.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve API key for provider %s: %w", pcfg.ID, err)
+	}
+
+	// Resolve extra headers
+	resolvedExtraHeaders := make(map[string]string)
+	for key, value := range pcfg.ExtraHeaders {
+		resolvedValue, err := clientOptions.resolver.ResolveValue(value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve extra header %s for provider %s: %w", key, pcfg.ID, err)
+		}
+		resolvedExtraHeaders[key] = resolvedValue
+	}
+
+	clientOptions.apiKey = resolvedAPIKey
+	clientOptions.extraHeaders = resolvedExtraHeaders
+
 	switch pcfg.Type {
 	case catwalk.TypeAnthropic:
 		return &baseProvider[AnthropicClient]{

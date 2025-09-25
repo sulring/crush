@@ -218,7 +218,7 @@ func (s *splashCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}),
 					func() tea.Msg {
 						start := time.Now()
-						err := providerConfig.TestConnection(s.ins.Config.Resolver())
+						err := providerConfig.TestConnection(s.ins.ShellResolver())
 						// intentionally wait for at least 750ms to make sure the user sees the spinner
 						elapsed := time.Since(start)
 						if elapsed < 750*time.Millisecond {
