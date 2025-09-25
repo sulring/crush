@@ -548,7 +548,7 @@ func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Reques
 	}
 
 	id := uuid.New().String()
-	cfg, err := config.Init(args.Path, args.DataDir, args.Debug)
+	cfg, err := config.Init(args.Path, args.DataDir, args.Debug, args.Env)
 	if err != nil {
 		c.logError(r, "failed to initialize config", "error", err)
 		jsonError(w, http.StatusBadRequest, fmt.Sprintf("failed to initialize config: %v", err))

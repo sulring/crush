@@ -42,7 +42,7 @@ func LoadReader(fd io.Reader) (*Config, error) {
 }
 
 // Load loads the configuration from the default paths.
-func Load(workingDir, dataDir string, debug bool) (*Config, error) {
+func Load(workingDir, dataDir string, debug bool, envs []string) (*Config, error) {
 	configPaths := lookupConfigs(workingDir)
 
 	cfg, err := loadFromConfigPaths(configPaths)
@@ -65,7 +65,6 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 	}
 	cfg.knownProviders = providers
 
-	envs := os.Environ()
 	// Configure providers
 	valueResolver := NewShellVariableResolver(envs)
 	cfg.resolver = valueResolver

@@ -46,7 +46,7 @@ var logsCmd = &cobra.Command{
 		log.SetLevel(log.DebugLevel)
 		log.SetOutput(os.Stdout)
 
-		cfg, err := config.Load(cwd, dataDir, false)
+		cfg, err := config.Load(cwd, dataDir, false, os.Environ())
 		if err != nil {
 			return fmt.Errorf("failed to load configuration: %v", err)
 		}
