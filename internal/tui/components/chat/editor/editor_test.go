@@ -241,7 +241,7 @@ func TestEditor_OnCompletionPathToImageEmitsAttachFileMessage(t *testing.T) {
 
 	modelHasImageSupport := func() (bool, string) {
 		return true, "TestModel"
-	} 
+	}
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
 	_, cmd := onCompletionItemSelect(fsys, modelHasImageSupport, FileCompletionItem{Path: "auto_completed_image.png"}, true, testEditor)
 
@@ -275,7 +275,7 @@ func TestEditor_OnCompletionPathToImageEmitsWanrningMessageWhenModelDoesNotSuppo
 
 	modelHasImageSupport := func() (bool, string) {
 		return false, "TestModel"
-	} 
+	}
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
 	_, cmd := onCompletionItemSelect(fsys, modelHasImageSupport, FileCompletionItem{Path: "auto_completed_image.png"}, true, testEditor)
 
@@ -287,10 +287,9 @@ func TestEditor_OnCompletionPathToImageEmitsWanrningMessageWhenModelDoesNotSuppo
 	require.True(t, ok)
 	assert.Equal(t, util.InfoMsg{
 		Type: util.InfoTypeWarn,
-		Msg: "File attachments are not supported by the current model: TestModel",
+		Msg:  "File attachments are not supported by the current model: TestModel",
 	}, warningMsg)
 }
-
 
 func TestEditor_OnCompletionPathToNonImageEmitsAttachFileMessage(t *testing.T) {
 	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
@@ -305,7 +304,7 @@ func TestEditor_OnCompletionPathToNonImageEmitsAttachFileMessage(t *testing.T) {
 
 	modelHasImageSupport := func() (bool, string) {
 		return true, "TestModel"
-	} 
+	}
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
 	_, cmd := onCompletionItemSelect(fsys, modelHasImageSupport, FileCompletionItem{Path: "random.txt"}, true, testEditor)
 
