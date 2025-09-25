@@ -398,6 +398,48 @@ func TestEditor_OnPastePathToNonImageEmitsAttachFileMessage(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
+func TestEditor_OnPastePathToNonImageEmitsWanrningMessageWhenModelDoesNotSupportImages(t *testing.T) {
+	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
+
+	// Create a temporary directory and files for testing
+	tempDir := t.TempDir()
+
+	// Create test image file
+	imagePath := filepath.Join(tempDir, "image.png")
+	err := os.WriteFile(imagePath, pngMagicNumberData, 0o644)
+	require.NoError(t, err)
+
+	// Create test text file
+	textPath := filepath.Join(tempDir, "random.txt")
+	err = os.WriteFile(textPath, []byte("Some content"), 0o644)
+	require.NoError(t, err)
+
+	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
+
+	// Change to temp directory so paths resolve correctly
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(originalWd)
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+
+	modelDoesNotHaveImageSupport := func() (bool, string) {
+		return false, "ImagesUnsupportedTestModel"
+	}
+	_, cmd := onPaste(filepath.Abs, modelDoesNotHaveImageSupport, testEditor, tea.PasteMsg("image.png"))
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	require.NotNil(t, msg)
+
+	warningMsg, ok := msg.(util.InfoMsg)
+	require.True(t, ok)
+	assert.Equal(t, util.InfoMsg{
+		Type: util.InfoTypeWarn,
+		Msg:  "File attachments are not supported by the current model: ImagesUnsupportedTestModel",
+	}, warningMsg)
+}
+
 // TestHelperFunctions demonstrates how to use the batch message helpers
 func TestHelperFunctions(t *testing.T) {
 	testEditor := newEditor(&app.App{}, mockDirLister([]string{"file1.txt", "file2.txt"}))
