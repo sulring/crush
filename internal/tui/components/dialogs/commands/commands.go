@@ -354,7 +354,7 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 	if c.sessionID != "" {
 		agentCfg := c.cfg.Agents["coder"]
 		model := c.cfg.GetModelByType(agentCfg.Model)
-		if model.SupportsImages {
+		if model != nil && model.SupportsImages {
 			commands = append(commands, Command{
 				ID:          "file_picker",
 				Title:       "Open File Picker",

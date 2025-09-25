@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/client"
-	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/tui/styles"
@@ -30,14 +30,14 @@ type header struct {
 	width       int
 	session     session.Session
 	client      *client.Client
-	cfg         *config.Config
+	ins         *proto.Instance
 	detailsOpen bool
 }
 
-func New(lspClients *client.Client, cfg *config.Config) Header {
+func New(lspClients *client.Client, ins *proto.Instance) Header {
 	return &header{
 		client: lspClients,
-		cfg:    cfg,
+		ins:    ins,
 		width:  0,
 	}
 }
@@ -108,14 +108,14 @@ func (h *header) details(availWidth int) string {
 
 	errorCount := 0
 	// TODO: Move this to update?
-	lsps, err := h.client.GetLSPs(context.TODO())
+	lsps, err := h.client.GetLSPs(context.TODO(), h.ins.ID)
 	if err != nil {
 		return ""
 	}
 
 	for l := range lsps {
 		// TODO: Same here, move to update?
-		diags, err := h.client.GetLSPDiagnostics(context.TODO(), l)
+		diags, err := h.client.GetLSPDiagnostics(context.TODO(), h.ins.ID, l)
 		if err != nil {
 			return ""
 		}
@@ -132,8 +132,8 @@ func (h *header) details(availWidth int) string {
 		parts = append(parts, s.Error.Render(fmt.Sprintf("%s%d", styles.ErrorIcon, errorCount)))
 	}
 
-	agentCfg := h.cfg.Agents["coder"]
-	model := h.cfg.GetModelByType(agentCfg.Model)
+	agentCfg := h.ins.Config.Agents["coder"]
+	model := h.ins.Config.GetModelByType(agentCfg.Model)
 	if model == nil {
 		return "No model"
 	}
@@ -154,7 +154,7 @@ func (h *header) details(availWidth int) string {
 
 	// Truncate cwd if necessary, and insert it at the beginning.
 	const dirTrimLimit = 4
-	cwd := fsext.DirTrim(fsext.PrettyPath(h.cfg.WorkingDir()), dirTrimLimit)
+	cwd := fsext.DirTrim(fsext.PrettyPath(h.ins.Config.WorkingDir()), dirTrimLimit)
 	cwd = ansi.Truncate(cwd, max(0, availWidth-lipgloss.Width(metadata)), "…")
 	cwd = s.Muted.Render(cwd)
 

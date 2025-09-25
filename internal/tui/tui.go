@@ -68,8 +68,8 @@ type appModel struct {
 	status          status.StatusCmp
 	showingFullHelp bool
 
-	app *client.Client
-	cfg *config.Config
+	c   *client.Client
+	ins *proto.Instance
 
 	dialog       dialogs.DialogCmp
 	completions  completions.Completions
@@ -103,7 +103,7 @@ func (a appModel) Init() tea.Cmd {
 func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
-	a.isConfigured = config.HasInitialDataConfig(a.cfg)
+	a.isConfigured = config.HasInitialDataConfig(a.ins.Config)
 
 	switch msg := msg.(type) {
 	case tea.KeyboardEnhancementsMsg:
@@ -169,7 +169,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Commands
 	case commands.SwitchSessionsMsg:
 		return a, func() tea.Msg {
-			allSessions, _ := a.app.ListSessions(context.Background())
+			allSessions, _ := a.c.ListSessions(context.Background(), a.ins.ID)
 			return dialogs.OpenDialogMsg{
 				Model: sessions.NewSessionDialogCmp(allSessions, a.selectedSessionID),
 			}
@@ -178,24 +178,24 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commands.SwitchModelMsg:
 		return a, util.CmdHandler(
 			dialogs.OpenDialogMsg{
-				Model: models.NewModelDialogCmp(a.cfg),
+				Model: models.NewModelDialogCmp(a.ins.Config),
 			},
 		)
 	// Compact
 	case commands.CompactMsg:
 		return a, util.CmdHandler(dialogs.OpenDialogMsg{
-			Model: compact.NewCompactDialogCmp(a.app, msg.SessionID, true),
+			Model: compact.NewCompactDialogCmp(a.c, a.ins, msg.SessionID, true),
 		})
 	case commands.QuitMsg:
 		return a, util.CmdHandler(dialogs.OpenDialogMsg{
 			Model: quit.NewQuitDialog(),
 		})
 	case commands.ToggleYoloModeMsg:
-		skip, err := a.app.GetPermissionsSkipRequests(context.TODO())
+		skip, err := a.c.GetPermissionsSkipRequests(context.TODO(), a.ins.ID)
 		if err != nil {
 			return a, util.ReportError(fmt.Errorf("failed to get permissions skip requests: %v", err))
 		}
-		if err := a.app.SetPermissionsSkipRequests(context.TODO(), !skip); err != nil {
+		if err := a.c.SetPermissionsSkipRequests(context.TODO(), a.ins.ID, !skip); err != nil {
 			return a, util.ReportError(fmt.Errorf("failed to toggle YOLO mode: %v", err))
 		}
 	case commands.ToggleHelpMsg:
@@ -204,17 +204,17 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleWindowResize(a.wWidth, a.wHeight)
 	// Model Switch
 	case models.ModelSelectedMsg:
-		info, err := a.app.GetAgentInfo(context.TODO())
+		info, err := a.c.GetAgentInfo(context.TODO(), a.ins.ID)
 		if err != nil {
 			return a, util.ReportError(fmt.Errorf("failed to check if agent is busy: %v", err))
 		}
 		if info.IsBusy {
 			return a, util.ReportWarn("Agent is busy, please wait...")
 		}
-		a.cfg.UpdatePreferredModel(msg.ModelType, msg.Model)
+		a.ins.Config.UpdatePreferredModel(msg.ModelType, msg.Model)
 
 		// Update the agent with the new model/provider configuration
-		if err := a.app.UpdateAgent(context.TODO()); err != nil {
+		if err := a.c.UpdateAgent(context.TODO(), a.ins.ID); err != nil {
 			return a, util.ReportError(fmt.Errorf("model changed to %s but failed to update agent: %v", msg.Model.Model, err))
 		}
 
@@ -233,7 +233,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, util.CmdHandler(dialogs.CloseDialogMsg{})
 		}
 		return a, util.CmdHandler(dialogs.OpenDialogMsg{
-			Model: filepicker.NewFilePickerCmp(a.cfg.WorkingDir()),
+			Model: filepicker.NewFilePickerCmp(a.ins.Config.WorkingDir()),
 		})
 	// Permissions
 	case pubsub.Event[permission.PermissionNotification]:
@@ -252,11 +252,11 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pubsub.Event[permission.PermissionRequest]:
 		return a, util.CmdHandler(dialogs.OpenDialogMsg{
 			Model: permissions.NewPermissionDialogCmp(msg.Payload, &permissions.Options{
-				DiffMode: a.cfg.Options.TUI.DiffMode,
+				DiffMode: a.ins.Config.Options.TUI.DiffMode,
 			}),
 		})
 	case permissions.PermissionResponseMsg:
-		if err := a.app.GrantPermission(context.TODO(), proto.PermissionGrant(msg)); err != nil {
+		if err := a.c.GrantPermission(context.TODO(), a.ins.ID, proto.PermissionGrant(msg)); err != nil {
 			return a, util.ReportError(fmt.Errorf("failed to grant permission: %v", err))
 		}
 		return a, nil
@@ -281,18 +281,18 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle auto-compact logic
 		if payload.Done && payload.Type == agent.AgentEventTypeResponse && a.selectedSessionID != "" {
 			// Get current session to check token usage
-			session, err := a.app.GetSession(context.Background(), a.selectedSessionID)
+			session, err := a.c.GetSession(context.Background(), a.ins.ID, a.selectedSessionID)
 			if err == nil {
-				info, err := a.app.GetAgentInfo(context.Background())
+				info, err := a.c.GetAgentInfo(context.Background(), a.ins.ID)
 				if err != nil {
 					return a, util.ReportError(fmt.Errorf("failed to check if agent is busy: %v", err))
 				}
 				model := info.Model
 				contextWindow := model.ContextWindow
 				tokens := session.CompletionTokens + session.PromptTokens
-				if (tokens >= int64(float64(contextWindow)*0.95)) && !a.cfg.Options.DisableAutoSummarize { // Show compact confirmation dialog
+				if (tokens >= int64(float64(contextWindow)*0.95)) && !a.ins.Config.Options.DisableAutoSummarize { // Show compact confirmation dialog
 					cmds = append(cmds, util.CmdHandler(dialogs.OpenDialogMsg{
-						Model: compact.NewCompactDialogCmp(a.app, a.selectedSessionID, false),
+						Model: compact.NewCompactDialogCmp(a.c, a.ins, a.selectedSessionID, false),
 					}))
 				}
 			}
@@ -305,7 +305,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
-		a.isConfigured = config.HasInitialDataConfig(a.cfg)
+		a.isConfigured = config.HasInitialDataConfig(a.ins.Config)
 		updated, pageCmd := item.Update(msg)
 		if model, ok := updated.(util.Model); ok {
 			a.pages[a.currentPage] = model
@@ -472,7 +472,7 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		return util.CmdHandler(dialogs.OpenDialogMsg{
-			Model: commands.NewCommandDialog(a.cfg, a.selectedSessionID),
+			Model: commands.NewCommandDialog(a.ins.Config, a.selectedSessionID),
 		})
 	case key.Matches(msg, a.keyMap.Sessions):
 		// if the app is not configured show no sessions
@@ -492,7 +492,7 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		cmds = append(cmds,
 			func() tea.Msg {
-				allSessions, _ := a.app.ListSessions(context.Background())
+				allSessions, _ := a.c.ListSessions(context.Background(), a.ins.ID)
 				return dialogs.OpenDialogMsg{
 					Model: sessions.NewSessionDialogCmp(allSessions, a.selectedSessionID),
 				}
@@ -500,7 +500,7 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		)
 		return tea.Sequence(cmds...)
 	case key.Matches(msg, a.keyMap.Suspend):
-		info, err := a.app.GetAgentInfo(context.TODO())
+		info, err := a.c.GetAgentInfo(context.TODO(), a.ins.ID)
 		if err != nil || info.IsBusy {
 			return util.ReportWarn("Agent is busy, please wait...")
 		}
@@ -521,7 +521,7 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 // moveToPage handles navigation between different pages in the application.
 func (a *appModel) moveToPage(pageID page.PageID) tea.Cmd {
-	info, err := a.app.GetAgentInfo(context.TODO())
+	info, err := a.c.GetAgentInfo(context.TODO(), a.ins.ID)
 	if err != nil {
 		return util.ReportError(fmt.Errorf("failed to check if agent is busy: %v", err))
 	}
@@ -626,25 +626,20 @@ func (a *appModel) View() tea.View {
 }
 
 // New creates and initializes a new TUI application model.
-func New(app *client.Client) (tea.Model, error) {
-	cfg, err := app.GetConfig(context.TODO())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get config: %v", err)
-	}
-
+func New(c *client.Client, ins *proto.Instance) (tea.Model, error) {
 	// Setup logs
 	log.Setup(
-		filepath.Join(cfg.Options.DataDirectory, "logs", "tui.log"),
-		cfg.Options.Debug,
+		filepath.Join(ins.Config.Options.DataDirectory, "logs", "tui.log"),
+		ins.Config.Options.Debug,
 	)
 
-	chatPage := chat.New(app, cfg)
+	chatPage := chat.New(c, ins)
 	keyMap := DefaultKeyMap()
 	keyMap.pageBindings = chatPage.Bindings()
 	model := &appModel{
+		ins:         ins,
 		currentPage: chat.ChatPageID,
-		app:         app,
-		cfg:         cfg,
+		c:           c,
 		status:      status.NewStatusCmp(),
 		loadedPages: make(map[page.PageID]bool),
 		keyMap:      keyMap,

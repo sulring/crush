@@ -42,16 +42,6 @@ type Instance struct {
 	path  string
 }
 
-// ID returns the unique identifier of the instance.
-func (i *Instance) ID() string {
-	return i.id
-}
-
-// Path returns the filesystem path associated with the instance.
-func (i *Instance) Path() string {
-	return i.path
-}
-
 // ParseHostURL parses a host URL into a [url.URL].
 func ParseHostURL(host string) (*url.URL, error) {
 	proto, addr, ok := strings.Cut(host, "://")
@@ -141,6 +131,7 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	mux.HandleFunc("GET /v1/instances", c.handleGetInstances)
 	mux.HandleFunc("POST /v1/instances", c.handlePostInstances)
 	mux.HandleFunc("DELETE /v1/instances/{id}", c.handleDeleteInstances)
+	mux.HandleFunc("GET /v1/instances/{id}", c.handleGetInstance)
 	mux.HandleFunc("GET /v1/instances/{id}/config", c.handleGetInstanceConfig)
 	mux.HandleFunc("GET /v1/instances/{id}/events", c.handleGetInstanceEvents)
 	mux.HandleFunc("GET /v1/instances/{id}/sessions", c.handleGetInstanceSessions)

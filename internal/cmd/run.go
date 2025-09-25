@@ -31,13 +31,13 @@ crush run -q "Generate a README for this project"
 			return fmt.Errorf("invalid host URL: %v", err)
 		}
 
-		c, err := setupApp(cmd, hostURL)
+		c, ins, err := setupApp(cmd, hostURL)
 		if err != nil {
 			return err
 		}
-		defer func() { c.DeleteInstance(cmd.Context(), c.ID()) }()
+		defer func() { c.DeleteInstance(cmd.Context(), ins.ID) }()
 
-		cfg, err := c.GetConfig(cmd.Context())
+		cfg, err := c.GetConfig(cmd.Context(), ins.ID)
 		if err != nil {
 			return fmt.Errorf("failed to get config: %v", err)
 		}

@@ -9,10 +9,10 @@ import (
 	"github.com/charmbracelet/bubbles/v2/key"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/client"
-	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/llm/agent"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/tui/components/chat/messages"
@@ -59,8 +59,8 @@ type MessageListCmp interface {
 // of chat messages with support for tool calls, real-time updates, and
 // session switching.
 type messageListCmp struct {
-	client           *client.Client
-	cfg              *config.Config
+	c                *client.Client
+	ins              *proto.Instance
 	width, height    int
 	session          session.Session
 	listCmp          list.List[list.Item]
@@ -79,7 +79,7 @@ type messageListCmp struct {
 
 // New creates a new message list component with custom keybindings
 // and reverse ordering (newest messages at bottom).
-func New(app *client.Client, cfg *config.Config) MessageListCmp {
+func New(app *client.Client, ins *proto.Instance) MessageListCmp {
 	defaultListKeyMap := list.DefaultKeyMap()
 	listCmp := list.New(
 		[]list.Item{},
@@ -90,8 +90,8 @@ func New(app *client.Client, cfg *config.Config) MessageListCmp {
 		list.WithEnableMouse(),
 	)
 	return &messageListCmp{
-		client:            app,
-		cfg:               cfg,
+		c:                 app,
+		ins:               ins,
 		listCmp:           listCmp,
 		previousSelected:  "",
 		defaultListKeyMap: defaultListKeyMap,
@@ -106,9 +106,9 @@ func (m *messageListCmp) Init() tea.Cmd {
 // Update handles incoming messages and updates the component state.
 func (m *messageListCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
-	info, err := m.client.GetAgentInfo(context.TODO())
+	info, err := m.c.GetAgentInfo(context.TODO(), m.ins.ID)
 	if m.session.ID != "" && err == nil && !info.IsZero() {
-		queueSize, _ := m.client.GetAgentSessionQueuedPrompts(context.TODO(), m.session.ID)
+		queueSize, _ := m.c.GetAgentSessionQueuedPrompts(context.TODO(), m.ins.ID, m.session.ID)
 		if queueSize != m.promptQueue {
 			m.promptQueue = queueSize
 			cmds = append(cmds, m.SetSize(m.width, m.height))
@@ -239,7 +239,7 @@ func (m *messageListCmp) View() string {
 				m.listCmp.View(),
 			),
 	}
-	info, err := m.client.GetAgentInfo(context.TODO())
+	info, err := m.c.GetAgentInfo(context.TODO(), m.ins.ID)
 	if err == nil && !info.IsZero() && m.promptQueue > 0 {
 		queuePill := queuePill(m.promptQueue, t)
 		view = append(view, t.S().Base.PaddingLeft(4).PaddingTop(1).Render(queuePill))
@@ -373,7 +373,7 @@ func (m *messageListCmp) handleNewMessage(msg message.Message) tea.Cmd {
 // handleNewUserMessage adds a new user message to the list and updates the timestamp.
 func (m *messageListCmp) handleNewUserMessage(msg message.Message) tea.Cmd {
 	m.lastUserMessageTime = msg.CreatedAt
-	return m.listCmp.AppendItem(messages.NewMessageCmp(m.cfg, msg))
+	return m.listCmp.AppendItem(messages.NewMessageCmp(m.ins.Config, msg))
 }
 
 // handleToolMessage updates existing tool calls with their results.
@@ -466,7 +466,7 @@ func (m *messageListCmp) updateAssistantMessageContent(msg message.Message, assi
 		if msg.FinishPart() != nil && msg.FinishPart().Reason == message.FinishReasonEndTurn {
 			m.listCmp.AppendItem(
 				messages.NewAssistantSection(
-					m.cfg,
+					m.ins.Config,
 					msg,
 					time.Unix(m.lastUserMessageTime, 0),
 				),
@@ -524,7 +524,7 @@ func (m *messageListCmp) handleNewAssistantMessage(msg message.Message) tea.Cmd 
 	if m.shouldShowAssistantMessage(msg) {
 		cmd := m.listCmp.AppendItem(
 			messages.NewMessageCmp(
-				m.cfg,
+				m.ins.Config,
 				msg,
 			),
 		)
@@ -547,7 +547,7 @@ func (m *messageListCmp) SetSession(session session.Session) tea.Cmd {
 	}
 
 	m.session = session
-	sessionMessages, err := m.client.ListMessages(context.Background(), session.ID)
+	sessionMessages, err := m.c.ListMessages(context.Background(), m.ins.ID, session.ID)
 	if err != nil {
 		return util.ReportError(err)
 	}
@@ -587,11 +587,11 @@ func (m *messageListCmp) convertMessagesToUI(sessionMessages []message.Message, 
 		switch msg.Role {
 		case message.User:
 			m.lastUserMessageTime = msg.CreatedAt
-			uiMessages = append(uiMessages, messages.NewMessageCmp(m.cfg, msg))
+			uiMessages = append(uiMessages, messages.NewMessageCmp(m.ins.Config, msg))
 		case message.Assistant:
 			uiMessages = append(uiMessages, m.convertAssistantMessage(msg, toolResultMap)...)
 			if msg.FinishPart() != nil && msg.FinishPart().Reason == message.FinishReasonEndTurn {
-				uiMessages = append(uiMessages, messages.NewAssistantSection(m.cfg, msg, time.Unix(m.lastUserMessageTime, 0)))
+				uiMessages = append(uiMessages, messages.NewAssistantSection(m.ins.Config, msg, time.Unix(m.lastUserMessageTime, 0)))
 			}
 		}
 	}
@@ -608,7 +608,7 @@ func (m *messageListCmp) convertAssistantMessage(msg message.Message, toolResult
 		uiMessages = append(
 			uiMessages,
 			messages.NewMessageCmp(
-				m.cfg, msg,
+				m.ins.Config, msg,
 			),
 		)
 	}
@@ -619,7 +619,7 @@ func (m *messageListCmp) convertAssistantMessage(msg message.Message, toolResult
 		uiMessages = append(uiMessages, messages.NewToolCallCmp(msg.ID, tc, options...))
 		// If this tool call is the agent tool, fetch nested tool calls
 		if tc.Name == agent.AgentToolName {
-			nestedMessages, _ := m.client.ListMessages(context.Background(), tc.ID)
+			nestedMessages, _ := m.c.ListMessages(context.Background(), m.ins.ID, tc.ID)
 			nestedToolResultMap := m.buildToolResultMap(nestedMessages)
 			nestedUIMessages := m.convertMessagesToUI(nestedMessages, nestedToolResultMap)
 			nestedToolCalls := make([]messages.ToolCallCmp, 0, len(nestedUIMessages))

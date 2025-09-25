@@ -108,7 +108,7 @@ crush -y
 			// TODO: implement TCP support
 		}
 
-		c, err := setupApp(cmd, hostURL)
+		c, ins, err := setupApp(cmd, hostURL)
 		if err != nil {
 			return err
 		}
@@ -128,12 +128,12 @@ crush -y
 			return fmt.Errorf("failed to connect to crush server: %v", err)
 		}
 
-		m, err := tui.New(c)
+		m, err := tui.New(c, ins)
 		if err != nil {
 			return fmt.Errorf("failed to create TUI model: %v", err)
 		}
 
-		defer func() { c.DeleteInstance(cmd.Context(), c.ID()) }()
+		defer func() { c.DeleteInstance(cmd.Context(), ins.ID) }()
 
 		event.AppInitialized()
 
@@ -146,7 +146,7 @@ crush -y
 			tea.WithFilter(tui.MouseEventFilter), // Filter mouse events based on focus state
 		)
 
-		evc, err := c.SubscribeEvents(cmd.Context())
+		evc, err := c.SubscribeEvents(cmd.Context(), ins.ID)
 		if err != nil {
 			return fmt.Errorf("failed to subscribe to events: %v", err)
 		}
@@ -199,7 +199,7 @@ func streamEvents(ctx context.Context, evc <-chan any, p *tea.Program) {
 
 // setupApp handles the common setup logic for both interactive and non-interactive modes.
 // It returns the app instance, config, cleanup function, and any error.
-func setupApp(cmd *cobra.Command, hostURL *url.URL) (*client.Client, error) {
+func setupApp(cmd *cobra.Command, hostURL *url.URL) (*client.Client, *proto.Instance, error) {
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
@@ -207,12 +207,12 @@ func setupApp(cmd *cobra.Command, hostURL *url.URL) (*client.Client, error) {
 
 	cwd, err := ResolveCwd(cmd)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	c, err := client.NewClient(cwd, hostURL.Scheme, hostURL.Host)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ins, err := c.CreateInstance(ctx, proto.Instance{
@@ -222,21 +222,19 @@ func setupApp(cmd *cobra.Command, hostURL *url.URL) (*client.Client, error) {
 		YOLO:    yolo,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create or connect to instance: %v", err)
+		return nil, nil, fmt.Errorf("failed to create or connect to instance: %v", err)
 	}
-
-	c.SetID(ins.ID)
 
 	cfg, err := c.GetGlobalConfig(cmd.Context())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get global config: %v", err)
+		return nil, nil, fmt.Errorf("failed to get global config: %v", err)
 	}
 
 	if shouldEnableMetrics(cfg) {
 		event.Init()
 	}
 
-	return c, nil
+	return c, ins, nil
 }
 
 var safeNameRegexp = regexp.MustCompile(`[^a-zA-Z0-9._-]`)

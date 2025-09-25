@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/tui/components/chat"
@@ -69,16 +70,16 @@ type sidebarCmp struct {
 	session       session.Session
 	logo          string
 	cwd           string
-	client        *client.Client
+	c             *client.Client
 	compactMode   bool
 	files         *csync.Map[string, SessionFile]
-	cfg           *config.Config
+	ins           *proto.Instance
 }
 
-func New(c *client.Client, cfg *config.Config, compact bool) Sidebar {
+func New(c *client.Client, ins *proto.Instance, compact bool) Sidebar {
 	return &sidebarCmp{
-		client:      c,
-		cfg:         cfg,
+		c:           c,
+		ins:         ins,
 		compactMode: compact,
 		files:       csync.NewMap[string, SessionFile](),
 	}
@@ -194,7 +195,7 @@ func (m *sidebarCmp) handleFileHistoryEvent(event pubsub.Event[history.File]) te
 			before, _ := fsext.ToUnixLineEndings(existing.History.initialVersion.Content)
 			after, _ := fsext.ToUnixLineEndings(existing.History.latestVersion.Content)
 			path := existing.History.initialVersion.Path
-			cwd := m.cfg.WorkingDir()
+			cwd := m.ins.Config.WorkingDir()
 			path = strings.TrimPrefix(path, cwd)
 			_, additions, deletions := diff.GenerateDiff(before, after, path)
 			existing.Additions = additions
@@ -221,7 +222,7 @@ func (m *sidebarCmp) handleFileHistoryEvent(event pubsub.Event[history.File]) te
 }
 
 func (m *sidebarCmp) loadSessionFiles() tea.Msg {
-	files, err := m.client.ListSessionHistoryFiles(context.Background(), m.session.ID)
+	files, err := m.c.ListSessionHistoryFiles(context.Background(), m.ins.ID, m.session.ID)
 	if err != nil {
 		return util.InfoMsg{
 			Type: util.InfoTypeError,
@@ -247,7 +248,7 @@ func (m *sidebarCmp) loadSessionFiles() tea.Msg {
 
 	sessionFiles := make([]SessionFile, 0, len(fileMap))
 	for path, fh := range fileMap {
-		cwd := m.cfg.WorkingDir()
+		cwd := m.ins.Config.WorkingDir()
 		path = strings.TrimPrefix(path, cwd)
 		before, _ := fsext.ToUnixLineEndings(fh.initialVersion.Content)
 		after, _ := fsext.ToUnixLineEndings(fh.latestVersion.Content)
@@ -267,7 +268,7 @@ func (m *sidebarCmp) loadSessionFiles() tea.Msg {
 
 func (m *sidebarCmp) SetSize(width, height int) tea.Cmd {
 	m.logo = m.logoBlock()
-	m.cwd = cwd(m.cfg)
+	m.cwd = cwd(m.ins.Config)
 	m.width = width
 	m.height = height
 	return nil
@@ -406,7 +407,7 @@ func (m *sidebarCmp) filesBlockCompact(maxWidth int) string {
 		maxItems = min(maxItems, availableHeight)
 	}
 
-	return files.RenderFileBlock(m.cfg, fileSlice, files.RenderOptions{
+	return files.RenderFileBlock(m.ins.Config, fileSlice, files.RenderOptions{
 		MaxWidth:    maxWidth,
 		MaxItems:    maxItems,
 		ShowSection: true,
@@ -417,14 +418,14 @@ func (m *sidebarCmp) filesBlockCompact(maxWidth int) string {
 // lspBlockCompact renders the LSP block with limited width and height for horizontal layout
 func (m *sidebarCmp) lspBlockCompact(maxWidth int) string {
 	// Limit items for horizontal layout
-	lspConfigs := m.cfg.LSP.Sorted()
+	lspConfigs := m.ins.Config.LSP.Sorted()
 	maxItems := min(5, len(lspConfigs))
 	availableHeight := m.height - 8
 	if availableHeight > 0 {
 		maxItems = min(maxItems, availableHeight)
 	}
 
-	return lspcomponent.RenderLSPBlock(m.client, m.cfg, lspcomponent.RenderOptions{
+	return lspcomponent.RenderLSPBlock(m.c, m.ins, lspcomponent.RenderOptions{
 		MaxWidth:    maxWidth,
 		MaxItems:    maxItems,
 		ShowSection: true,
@@ -435,13 +436,13 @@ func (m *sidebarCmp) lspBlockCompact(maxWidth int) string {
 // mcpBlockCompact renders the MCP block with limited width and height for horizontal layout
 func (m *sidebarCmp) mcpBlockCompact(maxWidth int) string {
 	// Limit items for horizontal layout
-	maxItems := min(5, len(m.cfg.MCP.Sorted()))
+	maxItems := min(5, len(m.ins.Config.MCP.Sorted()))
 	availableHeight := m.height - 8
 	if availableHeight > 0 {
 		maxItems = min(maxItems, availableHeight)
 	}
 
-	return mcp.RenderMCPBlock(m.cfg, mcp.RenderOptions{
+	return mcp.RenderMCPBlock(m.ins.Config, mcp.RenderOptions{
 		MaxWidth:    maxWidth,
 		MaxItems:    maxItems,
 		ShowSection: true,
@@ -469,7 +470,7 @@ func (m *sidebarCmp) filesBlock() string {
 	maxFiles, _, _ := m.getDynamicLimits()
 	maxFiles = min(len(fileSlice), maxFiles)
 
-	return files.RenderFileBlock(m.cfg, fileSlice, files.RenderOptions{
+	return files.RenderFileBlock(m.ins.Config, fileSlice, files.RenderOptions{
 		MaxWidth:    m.getMaxWidth(),
 		MaxItems:    maxFiles,
 		ShowSection: true,
@@ -480,10 +481,10 @@ func (m *sidebarCmp) filesBlock() string {
 func (m *sidebarCmp) lspBlock() string {
 	// Limit the number of LSPs shown
 	_, maxLSPs, _ := m.getDynamicLimits()
-	lspConfigs := m.cfg.LSP.Sorted()
+	lspConfigs := m.ins.Config.LSP.Sorted()
 	maxLSPs = min(len(lspConfigs), maxLSPs)
 
-	return lspcomponent.RenderLSPBlock(m.client, m.cfg, lspcomponent.RenderOptions{
+	return lspcomponent.RenderLSPBlock(m.c, m.ins, lspcomponent.RenderOptions{
 		MaxWidth:    m.getMaxWidth(),
 		MaxItems:    maxLSPs,
 		ShowSection: true,
@@ -494,10 +495,10 @@ func (m *sidebarCmp) lspBlock() string {
 func (m *sidebarCmp) mcpBlock() string {
 	// Limit the number of MCPs shown
 	_, _, maxMCPs := m.getDynamicLimits()
-	mcps := m.cfg.MCP.Sorted()
+	mcps := m.ins.Config.MCP.Sorted()
 	maxMCPs = min(len(mcps), maxMCPs)
 
-	return mcp.RenderMCPBlock(m.cfg, mcp.RenderOptions{
+	return mcp.RenderMCPBlock(m.ins.Config, mcp.RenderOptions{
 		MaxWidth:    m.getMaxWidth(),
 		MaxItems:    maxMCPs,
 		ShowSection: true,
@@ -544,15 +545,15 @@ func formatTokensAndCost(tokens, contextWindow int64, cost float64) string {
 }
 
 func (s *sidebarCmp) currentModelBlock() string {
-	agentCfg := s.cfg.Agents["coder"]
+	agentCfg := s.ins.Config.Agents["coder"]
 
-	selectedModel := s.cfg.Models[agentCfg.Model]
+	selectedModel := s.ins.Config.Models[agentCfg.Model]
 
-	model := s.cfg.GetModelByType(agentCfg.Model)
+	model := s.ins.Config.GetModelByType(agentCfg.Model)
 	if model == nil {
 		return "No model found"
 	}
-	modelProvider := s.cfg.GetProviderForModel(agentCfg.Model)
+	modelProvider := s.ins.Config.GetProviderForModel(agentCfg.Model)
 
 	t := styles.CurrentTheme()
 

@@ -4,17 +4,19 @@ import (
 	"time"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/lsp"
 )
 
 // Instance represents a running app.App instance with its associated resources
 // and state.
 type Instance struct {
-	ID      string `json:"id"`
-	Path    string `json:"path"`
-	YOLO    bool   `json:"yolo,omitempty"`
-	Debug   bool   `json:"debug,omitempty"`
-	DataDir string `json:"data_dir,omitempty"`
+	ID      string         `json:"id"`
+	Path    string         `json:"path"`
+	YOLO    bool           `json:"yolo,omitempty"`
+	Debug   bool           `json:"debug,omitempty"`
+	DataDir string         `json:"data_dir,omitempty"`
+	Config  *config.Config `json:"config,omitempty"`
 }
 
 // Error represents an error response.

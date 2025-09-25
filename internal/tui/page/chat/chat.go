@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/tui/components/anim"
@@ -90,8 +91,8 @@ func cancelTimerCmd() tea.Cmd {
 type chatPage struct {
 	width, height               int
 	detailsWidth, detailsHeight int
-	app                         *client.Client
-	cfg                         *config.Config
+	c                           *client.Client
+	ins                         *proto.Instance
 	keyboardEnhancements        tea.KeyboardEnhancementsMsg
 
 	// Layout state
@@ -118,33 +119,33 @@ type chatPage struct {
 	isProjectInit    bool
 }
 
-func New(app *client.Client, cfg *config.Config) ChatPage {
+func New(c *client.Client, ins *proto.Instance) ChatPage {
 	return &chatPage{
-		app:         app,
-		cfg:         cfg,
+		c:           c,
+		ins:         ins,
 		keyMap:      DefaultKeyMap(),
-		header:      header.New(app, cfg),
-		sidebar:     sidebar.New(app, cfg, false),
-		chat:        chat.New(app, cfg),
-		editor:      editor.New(app),
-		splash:      splash.New(app, cfg),
+		header:      header.New(c, ins),
+		sidebar:     sidebar.New(c, ins, false),
+		chat:        chat.New(c, ins),
+		editor:      editor.New(c, ins),
+		splash:      splash.New(c, ins),
 		focusedPane: PanelTypeSplash,
 	}
 }
 
 func (p *chatPage) Init() tea.Cmd {
-	compact := p.cfg.Options.TUI.CompactMode
+	compact := p.ins.Config.Options.TUI.CompactMode
 	p.compact = compact
 	p.forceCompact = compact
 	p.sidebar.SetCompactMode(p.compact)
 
 	// Set splash state based on config
-	if !config.HasInitialDataConfig(p.cfg) {
+	if !config.HasInitialDataConfig(p.ins.Config) {
 		// First-time setup: show model selection
 		p.splash.SetOnboarding(true)
 		p.isOnboarding = true
 		p.splashFullScreen = true
-	} else if b, _ := config.ProjectNeedsInitialization(p.cfg); b {
+	} else if b, _ := config.ProjectNeedsInitialization(p.ins.Config); b {
 		// Project needs CRUSH.md initialization
 		p.splash.SetProjectInit(true)
 		p.isProjectInit = true
@@ -332,7 +333,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, tea.Batch(cmds...)
 
 	case commands.CommandRunCustomMsg:
-		info, err := p.app.GetAgentInfo(context.TODO())
+		info, err := p.c.GetAgentInfo(context.TODO(), p.ins.ID)
 		if err != nil {
 			return p, util.ReportError(fmt.Errorf("failed to get agent info: %w", err))
 		}
@@ -346,12 +347,12 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case splash.OnboardingCompleteMsg:
 		p.splashFullScreen = false
-		if b, _ := config.ProjectNeedsInitialization(p.cfg); b {
+		if b, _ := config.ProjectNeedsInitialization(p.ins.Config); b {
 			p.splash.SetProjectInit(true)
 			p.splashFullScreen = true
 			return p, p.SetSize(p.width, p.height)
 		}
-		err := p.app.InitiateAgentProcessing(context.TODO())
+		err := p.c.InitiateAgentProcessing(context.TODO(), p.ins.ID)
 		if err != nil {
 			return p, util.ReportError(err)
 		}
@@ -360,7 +361,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.focusedPane = PanelTypeEditor
 		return p, p.SetSize(p.width, p.height)
 	case commands.NewSessionsMsg:
-		info, err := p.app.GetAgentInfo(context.TODO())
+		info, err := p.c.GetAgentInfo(context.TODO(), p.ins.ID)
 		if err != nil {
 			return p, util.ReportError(fmt.Errorf("failed to get agent info: %w", err))
 		}
@@ -372,7 +373,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, p.keyMap.NewSession):
 			// if we have no agent do nothing
-			info, err := p.app.GetAgentInfo(context.TODO())
+			info, err := p.c.GetAgentInfo(context.TODO(), p.ins.ID)
 			if err != nil || info.IsZero() {
 				return p, nil
 			}
@@ -381,8 +382,8 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return p, p.newSession()
 		case key.Matches(msg, p.keyMap.AddAttachment):
-			agentCfg := p.cfg.Agents["coder"]
-			model := p.cfg.GetModelByType(agentCfg.Model)
+			agentCfg := p.ins.Config.Agents["coder"]
+			model := p.ins.Config.GetModelByType(agentCfg.Model)
 			if model.SupportsImages {
 				return p, util.CmdHandler(commands.OpenFilePickerMsg{})
 			} else {
@@ -397,7 +398,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.changeFocus()
 			return p, nil
 		case key.Matches(msg, p.keyMap.Cancel):
-			info, err := p.app.GetAgentInfo(context.TODO())
+			info, err := p.c.GetAgentInfo(context.TODO(), p.ins.ID)
 			if err != nil {
 				return p, util.ReportError(fmt.Errorf("failed to get agent info: %w", err))
 			}
@@ -530,7 +531,7 @@ func (p *chatPage) View() string {
 
 func (p *chatPage) updateCompactConfig(compact bool) tea.Cmd {
 	return func() tea.Msg {
-		err := p.cfg.SetCompactMode(compact)
+		err := p.ins.Config.SetCompactMode(compact)
 		if err != nil {
 			return util.InfoMsg{
 				Type: util.InfoTypeError,
@@ -543,15 +544,15 @@ func (p *chatPage) updateCompactConfig(compact bool) tea.Cmd {
 
 func (p *chatPage) toggleThinking() tea.Cmd {
 	return func() tea.Msg {
-		agentCfg := p.cfg.Agents["coder"]
-		currentModel := p.cfg.Models[agentCfg.Model]
+		agentCfg := p.ins.Config.Agents["coder"]
+		currentModel := p.ins.Config.Models[agentCfg.Model]
 
 		// Toggle the thinking mode
 		currentModel.Think = !currentModel.Think
-		p.cfg.Models[agentCfg.Model] = currentModel
+		p.ins.Config.Models[agentCfg.Model] = currentModel
 
 		// Update the agent with the new configuration
-		if err := p.app.UpdateAgent(context.TODO()); err != nil {
+		if err := p.c.UpdateAgent(context.TODO(), p.ins.ID); err != nil {
 			return util.InfoMsg{
 				Type: util.InfoTypeError,
 				Msg:  "Failed to update thinking mode: " + err.Error(),
@@ -571,15 +572,15 @@ func (p *chatPage) toggleThinking() tea.Cmd {
 
 func (p *chatPage) openReasoningDialog() tea.Cmd {
 	return func() tea.Msg {
-		agentCfg := p.cfg.Agents["coder"]
-		model := p.cfg.GetModelByType(agentCfg.Model)
-		providerCfg := p.cfg.GetProviderForModel(agentCfg.Model)
+		agentCfg := p.ins.Config.Agents["coder"]
+		model := p.ins.Config.GetModelByType(agentCfg.Model)
+		providerCfg := p.ins.Config.GetProviderForModel(agentCfg.Model)
 
 		if providerCfg != nil && model != nil &&
 			providerCfg.Type == catwalk.TypeOpenAI && model.HasReasoningEffort {
 			// Return the OpenDialogMsg directly so it bubbles up to the main TUI
 			return dialogs.OpenDialogMsg{
-				Model: reasoning.NewReasoningDialog(p.cfg),
+				Model: reasoning.NewReasoningDialog(p.ins.Config),
 			}
 		}
 		return nil
@@ -588,7 +589,7 @@ func (p *chatPage) openReasoningDialog() tea.Cmd {
 
 func (p *chatPage) handleReasoningEffortSelected(effort string) tea.Cmd {
 	return func() tea.Msg {
-		cfg := p.cfg
+		cfg := p.ins.Config
 		agentCfg := cfg.Agents["coder"]
 		currentModel := cfg.Models[agentCfg.Model]
 
@@ -597,7 +598,7 @@ func (p *chatPage) handleReasoningEffortSelected(effort string) tea.Cmd {
 		cfg.Models[agentCfg.Model] = currentModel
 
 		// Update the agent with the new configuration
-		if err := p.app.UpdateAgent(context.TODO()); err != nil {
+		if err := p.c.UpdateAgent(context.TODO(), p.ins.ID); err != nil {
 			return util.InfoMsg{
 				Type: util.InfoTypeError,
 				Msg:  "Failed to update reasoning effort: " + err.Error(),
@@ -718,13 +719,13 @@ func (p *chatPage) changeFocus() {
 func (p *chatPage) cancel() tea.Cmd {
 	if p.isCanceling {
 		p.isCanceling = false
-		_ = p.app.ClearAgentSessionQueuedPrompts(context.TODO(), p.session.ID)
+		_ = p.c.ClearAgentSessionQueuedPrompts(context.TODO(), p.ins.ID, p.session.ID)
 		return nil
 	}
 
-	queued, _ := p.app.GetAgentSessionQueuedPrompts(context.TODO(), p.session.ID)
+	queued, _ := p.c.GetAgentSessionQueuedPrompts(context.TODO(), p.ins.ID, p.session.ID)
 	if queued > 0 {
-		_ = p.app.ClearAgentSessionQueuedPrompts(context.TODO(), p.session.ID)
+		_ = p.c.ClearAgentSessionQueuedPrompts(context.TODO(), p.ins.ID, p.session.ID)
 		return nil
 	}
 	p.isCanceling = true
@@ -750,18 +751,18 @@ func (p *chatPage) sendMessage(text string, attachments []message.Attachment) te
 	session := p.session
 	var cmds []tea.Cmd
 	if p.session.ID == "" {
-		newSession, err := p.app.CreateSession(context.Background(), "New Session")
+		newSession, err := p.c.CreateSession(context.Background(), p.ins.ID, "New Session")
 		if err != nil {
 			return util.ReportError(err)
 		}
 		session = *newSession
 		cmds = append(cmds, util.CmdHandler(chat.SessionSelectedMsg(session)))
 	}
-	info, err := p.app.GetAgentInfo(context.TODO())
+	info, err := p.c.GetAgentInfo(context.TODO(), p.ins.ID)
 	if err != nil || info.IsZero() {
 		return util.ReportError(fmt.Errorf("coder agent is not initialized"))
 	}
-	if err := p.app.SendMessage(context.Background(), session.ID, text, attachments...); err != nil {
+	if err := p.c.SendMessage(context.Background(), p.ins.ID, session.ID, text, attachments...); err != nil {
 		return util.ReportError(err)
 	}
 	cmds = append(cmds, p.chat.GoToBottom())
@@ -773,7 +774,7 @@ func (p *chatPage) Bindings() []key.Binding {
 		p.keyMap.NewSession,
 		p.keyMap.AddAttachment,
 	}
-	info, err := p.app.GetAgentInfo(context.TODO())
+	info, err := p.c.GetAgentInfo(context.TODO(), p.ins.ID)
 	if err == nil && info.IsBusy {
 		cancelBinding := p.keyMap.Cancel
 		if p.isCanceling {
@@ -895,7 +896,7 @@ func (p *chatPage) Help() help.KeyMap {
 			}
 			return core.NewSimpleHelp(shortList, fullList)
 		}
-		info, err := p.app.GetAgentInfo(context.TODO())
+		info, err := p.c.GetAgentInfo(context.TODO(), p.ins.ID)
 		if err == nil && info.IsBusy {
 			cancelBinding := key.NewBinding(
 				key.WithKeys("esc", "alt+esc"),
@@ -907,7 +908,7 @@ func (p *chatPage) Help() help.KeyMap {
 					key.WithHelp("esc", "press again to cancel"),
 				)
 			}
-			queued, _ := p.app.GetAgentSessionQueuedPrompts(context.TODO(), p.session.ID)
+			queued, _ := p.c.GetAgentSessionQueuedPrompts(context.TODO(), p.ins.ID, p.session.ID)
 			if queued > 0 {
 				cancelBinding = key.NewBinding(
 					key.WithKeys("esc", "alt+esc"),

@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/tui/components/chat"
 	"github.com/charmbracelet/crush/internal/tui/components/completions"
@@ -53,7 +54,8 @@ type editorCmp struct {
 	width              int
 	height             int
 	x, y               int
-	app                *client.Client
+	c                  *client.Client
+	ins                *proto.Instance
 	session            session.Session
 	textarea           *textarea.Model
 	attachments        []message.Attachment
@@ -211,7 +213,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case commands.OpenExternalEditorMsg:
-		info, err := m.app.GetAgentSessionInfo(context.TODO(), m.session.ID)
+		info, err := m.c.GetAgentSessionInfo(context.TODO(), m.ins.ID, m.session.ID)
 		if err == nil && info.IsBusy {
 			return m, util.ReportWarn("Agent is working, please wait...")
 		}
@@ -298,7 +300,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if key.Matches(msg, m.keyMap.OpenEditor) {
-			info, err := m.app.GetAgentSessionInfo(context.TODO(), m.session.ID)
+			info, err := m.c.GetAgentSessionInfo(context.TODO(), m.ins.ID, m.session.ID)
 			if err == nil && info.IsBusy {
 				return m, util.ReportWarn("Agent is working, please wait...")
 			}
@@ -367,7 +369,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *editorCmp) setEditorPrompt() {
-	skip, err := m.app.GetPermissionsSkipRequests(context.TODO())
+	skip, err := m.c.GetPermissionsSkipRequests(context.TODO(), m.ins.ID)
 	if err == nil && skip {
 		m.textarea.SetPromptFunc(4, yoloPromptFunc)
 		return
@@ -418,13 +420,13 @@ func (m *editorCmp) randomizePlaceholders() {
 func (m *editorCmp) View() string {
 	t := styles.CurrentTheme()
 	// Update placeholder
-	info, err := m.app.GetAgentInfo(context.TODO())
+	info, err := m.c.GetAgentInfo(context.TODO(), m.ins.ID)
 	if err == nil && info.IsBusy {
 		m.textarea.Placeholder = m.workingPlaceholder
 	} else {
 		m.textarea.Placeholder = m.readyPlaceholder
 	}
-	skip, err := m.app.GetPermissionsSkipRequests(context.TODO())
+	skip, err := m.c.GetPermissionsSkipRequests(context.TODO(), m.ins.ID)
 	if err == nil && skip {
 		m.textarea.Placeholder = "Yolo mode!"
 	}
@@ -568,7 +570,7 @@ func yoloPromptFunc(info textarea.PromptInfo) string {
 	return fmt.Sprintf("%s ", t.YoloDotsBlurred)
 }
 
-func New(app *client.Client) Editor {
+func New(c *client.Client, ins *proto.Instance) Editor {
 	t := styles.CurrentTheme()
 	ta := textarea.New()
 	ta.SetStyles(t.S().TextArea)
@@ -578,7 +580,8 @@ func New(app *client.Client) Editor {
 	ta.Focus()
 	e := &editorCmp{
 		// TODO: remove the app instance from here
-		app:      app,
+		c:        c,
+		ins:      ins,
 		textarea: ta,
 		keyMap:   DefaultEditorKeyMap(),
 	}

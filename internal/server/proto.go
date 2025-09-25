@@ -67,12 +67,14 @@ func (c *controllerV1) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 func (c *controllerV1) handleGetInstances(w http.ResponseWriter, r *http.Request) {
 	instances := []proto.Instance{}
 	for _, ins := range c.instances.Seq2() {
+		// TODO: implement pagination?
 		instances = append(instances, proto.Instance{
-			ID:      ins.ID(),
-			Path:    ins.Path(),
+			ID:      ins.id,
+			Path:    ins.path,
 			YOLO:    ins.cfg.Permissions != nil && ins.cfg.Permissions.SkipRequests,
 			DataDir: ins.cfg.Options.DataDirectory,
 			Debug:   ins.cfg.Options.Debug,
+			Config:  ins.cfg,
 		})
 	}
 	jsonEncode(w, instances)
@@ -512,6 +514,25 @@ func (c *controllerV1) handleDeleteInstances(w http.ResponseWriter, r *http.Requ
 	c.instances.Del(id)
 }
 
+func (c *controllerV1) handleGetInstance(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	ins, ok := c.instances.Get(id)
+	if !ok {
+		c.logError(r, "instance not found", "id", id)
+		jsonError(w, http.StatusNotFound, "instance not found")
+		return
+	}
+
+	jsonEncode(w, proto.Instance{
+		ID:      ins.id,
+		Path:    ins.path,
+		YOLO:    ins.cfg.Permissions != nil && ins.cfg.Permissions.SkipRequests,
+		DataDir: ins.cfg.Options.DataDirectory,
+		Debug:   ins.cfg.Options.Debug,
+		Config:  ins.cfg,
+	})
+}
+
 func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Request) {
 	var args proto.Instance
 	if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
@@ -575,6 +596,7 @@ func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Reques
 		DataDir: cfg.Options.DataDirectory,
 		Debug:   cfg.Options.Debug,
 		YOLO:    cfg.Permissions.SkipRequests,
+		Config:  cfg,
 	})
 }
 

@@ -23,7 +23,6 @@ const DummyHost = "api.crush.localhost"
 // Client represents an RPC client connected to a Crush server.
 type Client struct {
 	h       *http.Client
-	id      string
 	path    string
 	network string
 	addr    string
@@ -60,16 +59,6 @@ func NewClient(path, network, address string) (*Client, error) {
 		Timeout:   0, // we need this to be 0 for long-lived connections and SSE streams
 	}
 	return c, nil
-}
-
-// ID returns the client's instance unique identifier.
-func (c *Client) ID() string {
-	return c.id
-}
-
-// SetID sets the client's instance unique identifier.
-func (c *Client) SetID(id string) {
-	c.id = id
 }
 
 // Path returns the client's instance filesystem path.

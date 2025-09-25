@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/crush/internal/client"
-	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/lsp"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/styles"
 	"github.com/charmbracelet/lipgloss/v2"
@@ -24,7 +24,7 @@ type RenderOptions struct {
 }
 
 // RenderLSPList renders a list of LSP status items with the given options.
-func RenderLSPList(c *client.Client, cfg *config.Config, opts RenderOptions) []string {
+func RenderLSPList(c *client.Client, ins *proto.Instance, opts RenderOptions) []string {
 	t := styles.CurrentTheme()
 	lspList := []string{}
 
@@ -37,14 +37,14 @@ func RenderLSPList(c *client.Client, cfg *config.Config, opts RenderOptions) []s
 		lspList = append(lspList, section, "")
 	}
 
-	lspConfigs := cfg.LSP.Sorted()
+	lspConfigs := ins.Config.LSP.Sorted()
 	if len(lspConfigs) == 0 {
 		lspList = append(lspList, t.S().Base.Foreground(t.Border).Render("None"))
 		return lspList
 	}
 
 	// Get LSP states
-	lspStates, err := c.GetLSPs(context.TODO())
+	lspStates, err := c.GetLSPs(context.TODO(), ins.ID)
 	if err != nil {
 		slog.Error("failed to get lsp clients")
 		return nil
@@ -98,7 +98,7 @@ func RenderLSPList(c *client.Client, cfg *config.Config, opts RenderOptions) []s
 				protocol.SeverityInformation: 0,
 			}
 			if _, ok := lspStates[l.Name]; ok {
-				diags, err := c.GetLSPDiagnostics(context.TODO(), l.Name)
+				diags, err := c.GetLSPDiagnostics(context.TODO(), ins.ID, l.Name)
 				if err != nil {
 					slog.Error("couldn't get lsp diagnostics", "lsp", l.Name)
 					return nil
@@ -145,10 +145,10 @@ func RenderLSPList(c *client.Client, cfg *config.Config, opts RenderOptions) []s
 }
 
 // RenderLSPBlock renders a complete LSP block with optional truncation indicator.
-func RenderLSPBlock(c *client.Client, cfg *config.Config, opts RenderOptions, showTruncationIndicator bool) string {
+func RenderLSPBlock(c *client.Client, ins *proto.Instance, opts RenderOptions, showTruncationIndicator bool) string {
 	t := styles.CurrentTheme()
-	lspList := RenderLSPList(c, cfg, opts)
-	cfg, err := c.GetConfig(context.TODO())
+	lspList := RenderLSPList(c, ins, opts)
+	cfg, err := c.GetConfig(context.TODO(), ins.ID)
 	if err != nil {
 		slog.Error("failed to get config for lsp block rendering", "error", err)
 		return ""

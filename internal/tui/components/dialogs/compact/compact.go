@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/llm/agent"
+	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs"
 	"github.com/charmbracelet/crush/internal/tui/styles"
@@ -30,7 +31,8 @@ type compactDialogCmp struct {
 	sessionID       string
 	state           compactState
 	progress        string
-	client          *client.Client
+	c               *client.Client
+	ins             *proto.Instance
 	noAsk           bool // If true, skip confirmation dialog
 }
 
@@ -43,13 +45,14 @@ const (
 )
 
 // NewCompactDialogCmp creates a new session compact dialog
-func NewCompactDialogCmp(c *client.Client, sessionID string, noAsk bool) CompactDialog {
+func NewCompactDialogCmp(c *client.Client, ins *proto.Instance, sessionID string, noAsk bool) CompactDialog {
 	return &compactDialogCmp{
 		sessionID: sessionID,
 		keyMap:    DefaultKeyMap(),
 		state:     stateConfirm,
 		selected:  0,
-		client:    c,
+		c:         c,
+		ins:       ins,
 		noAsk:     noAsk,
 	}
 }
@@ -134,7 +137,7 @@ func (c *compactDialogCmp) startCompaction() tea.Cmd {
 	c.state = stateCompacting
 	c.progress = "Starting summarization..."
 	return func() tea.Msg {
-		err := c.client.AgentSummarizeSession(context.Background(), c.sessionID)
+		err := c.c.AgentSummarizeSession(context.Background(), c.ins.ID, c.sessionID)
 		if err != nil {
 			c.state = stateError
 			c.progress = "Error: " + err.Error()
