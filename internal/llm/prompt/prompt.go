@@ -8,7 +8,6 @@ import (
 
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
-	"github.com/charmbracelet/crush/internal/env"
 	"github.com/charmbracelet/crush/internal/home"
 )
 
@@ -49,7 +48,7 @@ func expandPath(path string) string {
 
 	// Handle environment variable expansion using the same pattern as config
 	if strings.HasPrefix(path, "$") {
-		resolver := config.NewEnvironmentVariableResolver(env.New())
+		resolver := config.NewEnvironmentVariableResolver(os.Environ())
 		if expanded, err := resolver.ResolveValue(path); err == nil {
 			path = expanded
 		}

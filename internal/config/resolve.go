@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/env"
 	"github.com/charmbracelet/crush/internal/shell"
 )
 
@@ -20,15 +19,15 @@ type Shell interface {
 
 type shellVariableResolver struct {
 	shell Shell
-	env   env.Env
+	env   []string
 }
 
-func NewShellVariableResolver(env env.Env) VariableResolver {
+func NewShellVariableResolver(env []string) VariableResolver {
 	return &shellVariableResolver{
 		env: env,
 		shell: shell.NewShell(
 			&shell.Options{
-				Env: env.Env(),
+				Env: env,
 			},
 		),
 	}
@@ -38,6 +37,7 @@ func NewShellVariableResolver(env env.Env) VariableResolver {
 // it will resolve shell-like variable substitution anywhere in the string, including:
 // - $(command) for command substitution
 // - $VAR or ${VAR} for environment variables
+// TODO: can we replace this with [os.Expand](https://pkg.go.dev/os#Expand) somehow?
 func (r *shellVariableResolver) ResolveValue(value string) (string, error) {
 	// Special case: lone $ is an error (backward compatibility)
 	if value == "$" {
@@ -139,7 +139,7 @@ func (r *shellVariableResolver) ResolveValue(value string) (string, error) {
 			varName = result[start+1 : end]
 		}
 
-		envValue := r.env.Get(varName)
+		envValue := environ(r.env).Getenv(varName)
 		if envValue == "" {
 			return "", fmt.Errorf("environment variable %q not set", varName)
 		}
@@ -152,10 +152,10 @@ func (r *shellVariableResolver) ResolveValue(value string) (string, error) {
 }
 
 type environmentVariableResolver struct {
-	env env.Env
+	env []string
 }
 
-func NewEnvironmentVariableResolver(env env.Env) VariableResolver {
+func NewEnvironmentVariableResolver(env []string) VariableResolver {
 	return &environmentVariableResolver{
 		env: env,
 	}
@@ -168,7 +168,7 @@ func (r *environmentVariableResolver) ResolveValue(value string) (string, error)
 	}
 
 	varName := strings.TrimPrefix(value, "$")
-	resolvedValue := r.env.Get(varName)
+	resolvedValue := environ(r.env).Getenv(varName)
 	if resolvedValue == "" {
 		return "", fmt.Errorf("environment variable %q not set", varName)
 	}

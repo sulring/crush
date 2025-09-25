@@ -9,29 +9,23 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/catwalk/pkg/embedded"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/version"
 )
 
 type ProviderClient interface {
 	GetProviders() ([]catwalk.Provider, error)
 }
 
-var (
-	providerOnce sync.Once
-	providerList []catwalk.Provider
-	providerErr  error
-)
-
 // file to cache provider data
 func providerCacheFileData() string {
 	xdgDataHome := os.Getenv("XDG_DATA_HOME")
 	if xdgDataHome != "" {
-		return filepath.Join(xdgDataHome, appName, "providers.json")
+		return filepath.Join(xdgDataHome, version.AppName, "providers.json")
 	}
 
 	// return the path to the main data directory
@@ -42,10 +36,10 @@ func providerCacheFileData() string {
 		if localAppData == "" {
 			localAppData = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local")
 		}
-		return filepath.Join(localAppData, appName, "providers.json")
+		return filepath.Join(localAppData, version.AppName, "providers.json")
 	}
 
-	return filepath.Join(home.Dir(), ".local", "share", appName, "providers.json")
+	return filepath.Join(home.Dir(), ".local", "share", version.AppName, "providers.json")
 }
 
 func saveProvidersInCache(path string, providers []catwalk.Provider) error {
@@ -114,15 +108,10 @@ func UpdateProviders(pathOrUrl string) error {
 }
 
 func Providers(cfg *Config) ([]catwalk.Provider, error) {
-	providerOnce.Do(func() {
-		catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
-		client := catwalk.NewWithURL(catwalkURL)
-		path := providerCacheFileData()
-
-		autoUpdateDisabled := cfg.Options.DisableProviderAutoUpdate
-		providerList, providerErr = loadProviders(autoUpdateDisabled, client, path)
-	})
-	return providerList, providerErr
+	catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
+	client := catwalk.NewWithURL(catwalkURL)
+	path := providerCacheFileData()
+	return loadProviders(cfg.Options.DisableProviderAutoUpdate, client, path)
 }
 
 func loadProviders(autoUpdateDisabled bool, client ProviderClient, path string) ([]catwalk.Provider, error) {

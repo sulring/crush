@@ -13,12 +13,10 @@ import (
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/csync"
-	"github.com/charmbracelet/crush/internal/env"
 	"github.com/tidwall/sjson"
 )
 
 const (
-	appName              = "crush"
 	defaultDataDirectory = ".crush"
 )
 
@@ -207,7 +205,7 @@ func (m MCPConfig) ResolvedEnv() []string {
 }
 
 func (m MCPConfig) ResolvedHeaders() map[string]string {
-	resolver := NewShellVariableResolver(env.New())
+	resolver := NewShellVariableResolver(os.Environ())
 	for e, v := range m.Headers {
 		var err error
 		m.Headers[e], err = resolver.ResolveValue(v)
@@ -563,7 +561,7 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 }
 
 func resolveEnvs(envs map[string]string) []string {
-	resolver := NewShellVariableResolver(env.New())
+	resolver := NewShellVariableResolver(os.Environ())
 	for e, v := range envs {
 		var err error
 		envs[e], err = resolver.ResolveValue(v)

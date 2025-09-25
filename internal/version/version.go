@@ -2,6 +2,8 @@ package version
 
 import "runtime/debug"
 
+const AppName = "crush"
+
 // Build-time parameters set via -ldflags
 
 var (

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/charmbracelet/crush/internal/env"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +24,7 @@ func TestShellVariableResolver_ResolveValue(t *testing.T) {
 	tests := []struct {
 		name        string
 		value       string
-		envVars     map[string]string
+		envVars     []string
 		shellFunc   func(ctx context.Context, command string) (stdout, stderr string, err error)
 		expected    string
 		expectError bool
@@ -38,13 +37,13 @@ func TestShellVariableResolver_ResolveValue(t *testing.T) {
 		{
 			name:     "environment variable resolution",
 			value:    "$HOME",
-			envVars:  map[string]string{"HOME": "/home/user"},
+			envVars:  []string{"HOME=/home/user"},
 			expected: "/home/user",
 		},
 		{
 			name:        "missing environment variable returns error",
 			value:       "$MISSING_VAR",
-			envVars:     map[string]string{},
+			envVars:     []string{},
 			expectError: true,
 		},
 
@@ -76,7 +75,7 @@ func TestShellVariableResolver_ResolveValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testEnv := env.NewFromMap(tt.envVars)
+			testEnv := environ(tt.envVars)
 			resolver := &shellVariableResolver{
 				shell: &mockShell{execFunc: tt.shellFunc},
 				env:   testEnv,
@@ -98,7 +97,7 @@ func TestShellVariableResolver_EnhancedResolveValue(t *testing.T) {
 	tests := []struct {
 		name        string
 		value       string
-		envVars     map[string]string
+		envVars     []string
 		shellFunc   func(ctx context.Context, command string) (stdout, stderr string, err error)
 		expected    string
 		expectError bool
@@ -117,21 +116,21 @@ func TestShellVariableResolver_EnhancedResolveValue(t *testing.T) {
 		{
 			name:     "environment variable within string",
 			value:    "Bearer $TOKEN",
-			envVars:  map[string]string{"TOKEN": "sk-ant-123"},
+			envVars:  []string{"TOKEN=sk-ant-123"},
 			expected: "Bearer sk-ant-123",
 		},
 		{
 			name:     "environment variable with braces within string",
 			value:    "Bearer ${TOKEN}",
-			envVars:  map[string]string{"TOKEN": "sk-ant-456"},
+			envVars:  []string{"TOKEN=sk-ant-456"},
 			expected: "Bearer sk-ant-456",
 		},
 		{
 			name:  "mixed command and environment substitution",
 			value: "$USER-$(date +%Y)-$HOST",
-			envVars: map[string]string{
-				"USER": "testuser",
-				"HOST": "localhost",
+			envVars: []string{
+				"USER=testuser",
+				"HOST=localhost",
 			},
 			shellFunc: func(ctx context.Context, command string) (stdout, stderr string, err error) {
 				if command == "date +%Y" {
@@ -179,7 +178,7 @@ func TestShellVariableResolver_EnhancedResolveValue(t *testing.T) {
 		{
 			name:        "empty environment variable substitution",
 			value:       "Bearer $EMPTY_VAR",
-			envVars:     map[string]string{},
+			envVars:     []string{},
 			expectError: true,
 		},
 		{
@@ -214,7 +213,7 @@ func TestShellVariableResolver_EnhancedResolveValue(t *testing.T) {
 		{
 			name:     "environment variable with underscores and numbers",
 			value:    "Bearer $API_KEY_V2",
-			envVars:  map[string]string{"API_KEY_V2": "sk-test-123"},
+			envVars:  []string{"API_KEY_V2=sk-test-123"},
 			expected: "Bearer sk-test-123",
 		},
 		{
@@ -241,7 +240,7 @@ func TestShellVariableResolver_EnhancedResolveValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testEnv := env.NewFromMap(tt.envVars)
+			testEnv := environ(tt.envVars)
 			resolver := &shellVariableResolver{
 				shell: &mockShell{execFunc: tt.shellFunc},
 				env:   testEnv,
@@ -263,7 +262,7 @@ func TestEnvironmentVariableResolver_ResolveValue(t *testing.T) {
 	tests := []struct {
 		name        string
 		value       string
-		envVars     map[string]string
+		envVars     []string
 		expected    string
 		expectError bool
 	}{
@@ -275,32 +274,32 @@ func TestEnvironmentVariableResolver_ResolveValue(t *testing.T) {
 		{
 			name:     "environment variable resolution",
 			value:    "$HOME",
-			envVars:  map[string]string{"HOME": "/home/user"},
+			envVars:  []string{"HOME=/home/user"},
 			expected: "/home/user",
 		},
 		{
 			name:     "environment variable with complex value",
 			value:    "$PATH",
-			envVars:  map[string]string{"PATH": "/usr/bin:/bin:/usr/local/bin"},
+			envVars:  []string{"PATH=/usr/bin:/bin:/usr/local/bin"},
 			expected: "/usr/bin:/bin:/usr/local/bin",
 		},
 		{
 			name:        "missing environment variable returns error",
 			value:       "$MISSING_VAR",
-			envVars:     map[string]string{},
+			envVars:     []string{},
 			expectError: true,
 		},
 		{
 			name:        "empty environment variable returns error",
 			value:       "$EMPTY_VAR",
-			envVars:     map[string]string{"EMPTY_VAR": ""},
+			envVars:     []string{"EMPTY_VAR="},
 			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testEnv := env.NewFromMap(tt.envVars)
+			testEnv := environ(tt.envVars)
 			resolver := NewEnvironmentVariableResolver(testEnv)
 
 			result, err := resolver.ResolveValue(tt.value)
@@ -316,7 +315,7 @@ func TestEnvironmentVariableResolver_ResolveValue(t *testing.T) {
 }
 
 func TestNewShellVariableResolver(t *testing.T) {
-	testEnv := env.NewFromMap(map[string]string{"TEST": "value"})
+	testEnv := environ([]string{"TEST=value"})
 	resolver := NewShellVariableResolver(testEnv)
 
 	require.NotNil(t, resolver)
@@ -324,7 +323,7 @@ func TestNewShellVariableResolver(t *testing.T) {
 }
 
 func TestNewEnvironmentVariableResolver(t *testing.T) {
-	testEnv := env.NewFromMap(map[string]string{"TEST": "value"})
+	testEnv := environ([]string{"TEST=value"})
 	resolver := NewEnvironmentVariableResolver(testEnv)
 
 	require.NotNil(t, resolver)
