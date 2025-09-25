@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/tui/components/completions"
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs/filepicker"
+	"github.com/charmbracelet/crush/internal/tui/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +30,7 @@ func executeBatchCommands(batchMsg tea.BatchMsg) []tea.Msg {
 }
 
 // assertBatchContainsMessage checks if a BatchMsg contains a message of the specified type
-func assertBatchContainsMessage(t *testing.T, batchMsg tea.BatchMsg, expectedType interface{}) bool {
+func assertBatchContainsMessage(t *testing.T, batchMsg tea.BatchMsg, expectedType any) bool {
 	t.Helper()
 	messages := executeBatchCommands(batchMsg)
 
@@ -45,7 +46,7 @@ func assertBatchContainsMessage(t *testing.T, batchMsg tea.BatchMsg, expectedTyp
 }
 
 // assertBatchContainsExactMessage checks if a BatchMsg contains a message with exact field values
-func assertBatchContainsExactMessage(t *testing.T, batchMsg tea.BatchMsg, expected interface{}) bool {
+func assertBatchContainsExactMessage(t *testing.T, batchMsg tea.BatchMsg, expected any) bool {
 	t.Helper()
 	messages := executeBatchCommands(batchMsg)
 
@@ -237,8 +238,12 @@ func TestEditor_OnCompletionPathToImageEmitsAttachFileMessage(t *testing.T) {
 			Data: []byte("Some content"),
 		},
 	}
+
+	modelHasImageSupport := func() (bool, string) {
+		return true, "TestModel"
+	} 
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	_, cmd := onCompletionItemSelect(fsys, FileCompletionItem{Path: "auto_completed_image.png"}, true, testEditor)
+	_, cmd := onCompletionItemSelect(fsys, modelHasImageSupport, FileCompletionItem{Path: "auto_completed_image.png"}, true, testEditor)
 
 	require.NotNil(t, cmd)
 	msg := cmd()
@@ -257,6 +262,36 @@ func TestEditor_OnCompletionPathToImageEmitsAttachFileMessage(t *testing.T) {
 	}, attachmentMsg)
 }
 
+func TestEditor_OnCompletionPathToImageEmitsWanrningMessageWhenModelDoesNotSupportImages(t *testing.T) {
+	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
+	fsys := fstest.MapFS{
+		"auto_completed_image.png": {
+			Data: pngMagicNumberData,
+		},
+		"random.txt": {
+			Data: []byte("Some content"),
+		},
+	}
+
+	modelHasImageSupport := func() (bool, string) {
+		return false, "TestModel"
+	} 
+	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
+	_, cmd := onCompletionItemSelect(fsys, modelHasImageSupport, FileCompletionItem{Path: "auto_completed_image.png"}, true, testEditor)
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	require.NotNil(t, msg)
+
+	warningMsg, ok := msg.(util.InfoMsg)
+	require.True(t, ok)
+	assert.Equal(t, util.InfoMsg{
+		Type: util.InfoTypeWarn,
+		Msg: "File attachments are not supported by the current model: TestModel",
+	}, warningMsg)
+}
+
+
 func TestEditor_OnCompletionPathToNonImageEmitsAttachFileMessage(t *testing.T) {
 	entriesForAutoComplete := mockDirLister([]string{"image.png", "random.txt"})
 	fsys := fstest.MapFS{
@@ -267,8 +302,12 @@ func TestEditor_OnCompletionPathToNonImageEmitsAttachFileMessage(t *testing.T) {
 			Data: []byte("Some content"),
 		},
 	}
+
+	modelHasImageSupport := func() (bool, string) {
+		return true, "TestModel"
+	} 
 	testEditor := newEditor(&app.App{}, entriesForAutoComplete)
-	_, cmd := onCompletionItemSelect(fsys, FileCompletionItem{Path: "random.txt"}, true, testEditor)
+	_, cmd := onCompletionItemSelect(fsys, modelHasImageSupport, FileCompletionItem{Path: "random.txt"}, true, testEditor)
 
 	assert.Nil(t, cmd)
 }
