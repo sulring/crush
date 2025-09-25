@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/app"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/session"
@@ -175,11 +176,15 @@ func (m *editorCmp) repositionCompletions() tea.Msg {
 	return completions.RepositionCompletionsMsg{X: x, Y: y}
 }
 
-func onCompletionItemSelect(fsys fs.FS, item FileCompletionItem, insert bool, m *editorCmp) (tea.Model, tea.Cmd) {
+func onCompletionItemSelect(fsys fs.FS, activeModelHasImageSupport func() (bool, string), item FileCompletionItem, insert bool, m *editorCmp) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	path := item.Path
 	// check if item is an image
 	if isExtOfAllowedImageType(path) {
+		if imagesSupported, modelName := activeModelHasImageSupport(); !imagesSupported {
+			// TODO(tauraamui): consolidate this kind of standard image attachment related warning
+			return m, util.ReportWarn("File attachments are not supported by the current model: " + modelName)
+		}
 		tooBig, _ := filepicker.IsFileTooBigWithFS(fsys, path, filepicker.MaxAttachmentSize)
 		if tooBig {
 			return m, nil
@@ -272,6 +277,12 @@ func onPaste(fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (tea.Model, tea
 	})
 }
 
+func activeModelHasImageSupport() (bool, string) {
+	agentCfg := config.Get().Agents["coder"]
+	model := config.Get().GetModelByType(agentCfg.Model)
+	return model.SupportsImages, model.Name
+}
+
 func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
@@ -290,13 +301,12 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isCompletionsOpen = false
 		m.currentQuery = ""
 		m.completionsStartIndex = 0
-	// NOTE(tauraamui) [15/09/2025]: this is the correct location to add picture attaching
 	case completions.SelectCompletionMsg:
 		if !m.isCompletionsOpen {
 			return m, nil
 		}
 		if item, ok := msg.Value.(FileCompletionItem); ok {
-			return onCompletionItemSelect(os.DirFS("."), item, msg.Insert, m)
+			return onCompletionItemSelect(os.DirFS("."), activeModelHasImageSupport, item, msg.Insert, m)
 		}
 	case commands.OpenExternalEditorMsg:
 		if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
