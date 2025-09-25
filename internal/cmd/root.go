@@ -254,7 +254,12 @@ func startDetachedServer(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to create server working directory: %v", err)
 	}
 
-	c := exec.CommandContext(cmd.Context(), exe, "server")
+	args := []string{"server"}
+	if clientHost != server.DefaultHost() {
+		args = append(args, "--host", clientHost)
+	}
+
+	c := exec.CommandContext(cmd.Context(), exe, args...)
 	stdoutPath := filepath.Join(chDir, "stdout.log")
 	stderrPath := filepath.Join(chDir, "stderr.log")
 	detachProcess(c)
