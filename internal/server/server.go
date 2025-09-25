@@ -91,7 +91,8 @@ func DefaultHost() string {
 // Server represents a Crush server instance bound to a specific address.
 type Server struct {
 	// Addr can be a TCP address, a Unix socket path, or a Windows named pipe.
-	Addr string
+	Addr    string
+	network string
 
 	h   *http.Server
 	ln  net.Listener
@@ -123,6 +124,7 @@ func DefaultServer(cfg *config.Config) *Server {
 func NewServer(cfg *config.Config, network, address string) *Server {
 	s := new(Server)
 	s.Addr = address
+	s.network = network
 	s.cfg = cfg
 	s.instances = csync.NewMap[string, *Instance]()
 	s.ctx = context.Background()
@@ -164,6 +166,9 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 		Protocols: &p,
 		Handler:   s.loggingHandler(mux),
 	}
+	if network == "tcp" {
+		s.h.Addr = address
+	}
 	return s
 }
 
@@ -177,11 +182,7 @@ func (s *Server) ListenAndServe() error {
 	if s.ln != nil {
 		return fmt.Errorf("server already started")
 	}
-	proto := "unix"
-	if runtime.GOOS == "windows" {
-		proto = "npipe"
-	}
-	ln, err := listen(proto, s.Addr)
+	ln, err := listen(s.network, s.Addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", s.Addr, err)
 	}
