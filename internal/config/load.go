@@ -119,11 +119,6 @@ func (c *Config) configureProviders(env env.Env, resolver VariableResolver, know
 		config, configExists := c.Providers.Get(string(p.ID))
 		// if the user configured a known provider we need to allow it to override a couple of parameters
 		if configExists {
-			if config.Disable {
-				slog.Debug("Skipping provider due to disable flag", "provider", p.ID)
-				c.Providers.Del(string(p.ID))
-				continue
-			}
 			if config.BaseURL != "" {
 				p.APIEndpoint = config.BaseURL
 			}
@@ -268,7 +263,7 @@ func (c *Config) configureProviders(env env.Env, resolver VariableResolver, know
 			c.Providers.Del(id)
 			continue
 		}
-		if providerConfig.Type != catwalk.TypeOpenAI && providerConfig.Type != catwalk.TypeAnthropic {
+		if providerConfig.Type != catwalk.TypeOpenAI && providerConfig.Type != catwalk.TypeAnthropic && providerConfig.Type != catwalk.TypeGemini {
 			slog.Warn("Skipping custom provider because the provider type is not supported", "provider", id, "type", providerConfig.Type)
 			c.Providers.Del(id)
 			continue

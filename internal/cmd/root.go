@@ -12,11 +12,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/client"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/event"
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/server"
@@ -134,6 +136,8 @@ crush -y
 
 		defer func() { c.DeleteInstance(cmd.Context(), c.ID()) }()
 
+		event.AppInitialized()
+
 		// Set up the TUI.
 		program := tea.NewProgram(
 			m,
@@ -151,10 +155,14 @@ crush -y
 		go streamEvents(cmd.Context(), evc, program)
 
 		if _, err := program.Run(); err != nil {
+			event.Error(err)
 			slog.Error("TUI run error", "error", err)
 			return fmt.Errorf("TUI error: %v", err)
 		}
 		return nil
+	},
+	PostRun: func(cmd *cobra.Command, args []string) {
+		event.AppExited()
 	},
 }
 
@@ -220,6 +228,15 @@ func setupApp(cmd *cobra.Command, hostURL *url.URL) (*client.Client, error) {
 
 	c.SetID(ins.ID)
 
+	cfg, err := c.GetGlobalConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get global config: %v", err)
+	}
+
+	if shouldEnableMetrics(cfg) {
+		event.Init()
+	}
+
 	return c, nil
 }
 
@@ -266,6 +283,19 @@ func startDetachedServer(cmd *cobra.Command) error {
 	}
 
 	return nil
+}
+
+func shouldEnableMetrics(cfg *config.Config) bool {
+	if v, _ := strconv.ParseBool(os.Getenv("CRUSH_DISABLE_METRICS")); v {
+		return false
+	}
+	if v, _ := strconv.ParseBool(os.Getenv("DO_NOT_TRACK")); v {
+		return false
+	}
+	if cfg.Options.DisableMetrics {
+		return false
+	}
+	return true
 }
 
 func MaybePrependStdin(prompt string) (string, error) {
