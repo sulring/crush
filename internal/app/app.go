@@ -9,14 +9,12 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/format"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/llm/agent"
-	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/pubsub"
 
 	"github.com/charmbracelet/crush/internal/lsp"
@@ -42,8 +40,7 @@ type App struct {
 
 	serviceEventsWG *sync.WaitGroup
 	eventsCtx       context.Context
-	events          chan tea.Msg
-	tuiWG           *sync.WaitGroup
+	events          chan any
 
 	// global context and cleanup functions
 	globalCtx    context.Context
@@ -78,9 +75,8 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 
 		config: cfg,
 
-		events:          make(chan tea.Msg, 100),
+		events:          make(chan any, 100),
 		serviceEventsWG: &sync.WaitGroup{},
-		tuiWG:           &sync.WaitGroup{},
 	}
 
 	app.setupEvents()
@@ -103,7 +99,7 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 }
 
 // Events returns the application's event channel.
-func (app *App) Events() <-chan tea.Msg {
+func (app *App) Events() <-chan any {
 	return app.events
 }
 
@@ -242,7 +238,7 @@ func setupSubscriber[T any](
 	wg *sync.WaitGroup,
 	name string,
 	subscriber func(context.Context) <-chan pubsub.Event[T],
-	outputCh chan<- tea.Msg,
+	outputCh chan<- any,
 ) {
 	wg.Go(func() {
 		subCh := subscriber(ctx)
@@ -253,9 +249,8 @@ func setupSubscriber[T any](
 					slog.Debug("subscription channel closed", "name", name)
 					return
 				}
-				var msg tea.Msg = event
 				select {
-				case outputCh <- msg:
+				case outputCh <- event:
 				case <-time.After(2 * time.Second):
 					slog.Warn("message dropped due to slow consumer", "name", name)
 				case <-ctx.Done():
@@ -296,38 +291,6 @@ func (app *App) InitCoderAgent() error {
 
 	setupSubscriber(app.eventsCtx, app.serviceEventsWG, "coderAgent", app.CoderAgent.Subscribe, app.events)
 	return nil
-}
-
-// Subscribe sends events to the TUI as tea.Msgs.
-func (app *App) Subscribe(program *tea.Program) {
-	defer log.RecoverPanic("app.Subscribe", func() {
-		slog.Info("TUI subscription panic: attempting graceful shutdown")
-		program.Quit()
-	})
-
-	app.tuiWG.Add(1)
-	tuiCtx, tuiCancel := context.WithCancel(app.globalCtx)
-	app.cleanupFuncs = append(app.cleanupFuncs, func() error {
-		slog.Debug("Cancelling TUI message handler")
-		tuiCancel()
-		app.tuiWG.Wait()
-		return nil
-	})
-	defer app.tuiWG.Done()
-
-	for {
-		select {
-		case <-tuiCtx.Done():
-			slog.Debug("TUI message handler shutting down")
-			return
-		case msg, ok := <-app.events:
-			if !ok {
-				slog.Debug("TUI message channel closed")
-				return
-			}
-			program.Send(msg)
-		}
-	}
 }
 
 // Shutdown performs a graceful shutdown of the application.
