@@ -138,7 +138,7 @@ func NewServer(cfg *config.Config, network, address string) *Server {
 	mux.HandleFunc("POST /v1/control", c.handlePostControl)
 	mux.HandleFunc("GET /v1/instances", c.handleGetInstances)
 	mux.HandleFunc("POST /v1/instances", c.handlePostInstances)
-	mux.HandleFunc("DELETE /v1/instances", c.handleDeleteInstances)
+	mux.HandleFunc("DELETE /v1/instances/{id}", c.handleDeleteInstances)
 	mux.HandleFunc("GET /v1/instances/{id}/config", c.handleGetInstanceConfig)
 	mux.HandleFunc("GET /v1/instances/{id}/events", c.handleGetInstanceEvents)
 	mux.HandleFunc("GET /v1/instances/{id}/sessions", c.handleGetInstanceSessions)

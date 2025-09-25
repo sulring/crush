@@ -504,34 +504,12 @@ func (c *controllerV1) handleGetInstanceConfig(w http.ResponseWriter, r *http.Re
 }
 
 func (c *controllerV1) handleDeleteInstances(w http.ResponseWriter, r *http.Request) {
-	var ids []string
-	id := r.URL.Query().Get("id")
-	if id != "" {
-		ids = append(ids, id)
+	id := r.PathValue("id")
+	ins, ok := c.instances.Get(id)
+	if ok {
+		ins.App.Shutdown()
 	}
-
-	// Get IDs from body
-	var args []proto.Instance
-	if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
-		c.logError(r, "failed to decode request", "error", err)
-		jsonError(w, http.StatusBadRequest, "failed to decode request")
-		return
-	}
-	ids = append(ids, func() []string {
-		out := make([]string, len(args))
-		for i, arg := range args {
-			out[i] = arg.ID
-		}
-		return out
-	}()...)
-
-	for _, id := range ids {
-		ins, ok := c.instances.Get(id)
-		if ok {
-			ins.App.Shutdown()
-		}
-		c.instances.Del(id)
-	}
+	c.instances.Del(id)
 }
 
 func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Request) {

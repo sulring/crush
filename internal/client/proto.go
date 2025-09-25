@@ -547,23 +547,6 @@ func (c *Client) DeleteInstance(ctx context.Context, id string) error {
 	return nil
 }
 
-func (c *Client) DeleteInstances(ctx context.Context, ids []string) error {
-	r, err := http.NewRequestWithContext(ctx, "DELETE", "http://localhost/v1/instances", jsonBody(ids))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	r.Header.Set("Content-Type", "application/json")
-	rsp, err := c.h.Do(r)
-	if err != nil {
-		return fmt.Errorf("failed to delete instances: %w", err)
-	}
-	defer rsp.Body.Close()
-	if rsp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to delete instances: status code %d", rsp.StatusCode)
-	}
-	return nil
-}
-
 func jsonBody(v any) *bytes.Buffer {
 	b := new(bytes.Buffer)
 	m, _ := json.Marshal(v)
