@@ -336,8 +336,11 @@ func TestEditor_OnPastePathToImageEmitsAttachFileMessage(t *testing.T) {
 	err = os.Chdir(tempDir)
 	require.NoError(t, err)
 
+	modelHasImageSupport := func() (bool, string) {
+		return true, "TestModel"
+	}
 	absRef := filepath.Abs
-	_, cmd := onPaste(absRef, testEditor, tea.PasteMsg("image.png"))
+	_, cmd := onPaste(absRef, modelHasImageSupport, testEditor, tea.PasteMsg("image.png"))
 
 	require.NotNil(t, cmd)
 	msg := cmd()
@@ -387,7 +390,10 @@ func TestEditor_OnPastePathToNonImageEmitsAttachFileMessage(t *testing.T) {
 	err = os.Chdir(tempDir)
 	require.NoError(t, err)
 
-	_, cmd := onPaste(filepath.Abs, testEditor, tea.PasteMsg("random.txt"))
+	modelHasImageSupport := func() (bool, string) {
+		return true, "TestModel"
+	}
+	_, cmd := onPaste(filepath.Abs, modelHasImageSupport, testEditor, tea.PasteMsg("random.txt"))
 
 	assert.Nil(t, cmd)
 }
