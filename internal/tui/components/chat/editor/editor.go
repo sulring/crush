@@ -238,7 +238,7 @@ func isExtOfAllowedImageType(path string) bool {
 
 type ResolveAbs func(path string) (string, error)
 
-func onPaste(fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+func onPaste(fsysAbs ResolveAbs, activeModelHasImageSupport func() (bool, string), m *editorCmp, msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	path := strings.ReplaceAll(string(msg), "\\ ", " ")
 	// try to get an image, in this case specifically because the file
@@ -254,6 +254,10 @@ func onPaste(fsysAbs ResolveAbs, m *editorCmp, msg tea.PasteMsg) (tea.Model, tea
 	if !isExtOfAllowedImageType(path) {
 		m.textarea, cmd = m.textarea.Update(msg)
 		return m, cmd
+	}
+	if imagesSupported, modelName := activeModelHasImageSupport(); !imagesSupported {
+		// TODO(tauraamui): consolidate this kind of standard image attachment related warning
+		return m, util.ReportWarn("File attachments are not supported by the current model: " + modelName)
 	}
 	tooBig, _ := filepicker.IsFileTooBig(path, filepicker.MaxAttachmentSize)
 	if tooBig {
@@ -317,7 +321,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetValue(msg.Text)
 		m.textarea.MoveToEnd()
 	case tea.PasteMsg:
-		return onPaste(filepath.Abs, m, msg) // inject fsys accessible from PWD
+		return onPaste(filepath.Abs, activeModelHasImageSupport, m, msg) // inject fsys accessible from PWD
 	case commands.ToggleYoloModeMsg:
 		m.setEditorPrompt()
 		return m, nil
