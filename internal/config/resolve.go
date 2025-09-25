@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -163,14 +164,5 @@ func NewEnvironmentVariableResolver(env []string) VariableResolver {
 
 // ResolveValue resolves environment variables from the provided env.Env.
 func (r *environmentVariableResolver) ResolveValue(value string) (string, error) {
-	if !strings.HasPrefix(value, "$") {
-		return value, nil
-	}
-
-	varName := strings.TrimPrefix(value, "$")
-	resolvedValue := environ(r.env).Getenv(varName)
-	if resolvedValue == "" {
-		return "", fmt.Errorf("environment variable %q not set", varName)
-	}
-	return resolvedValue, nil
+	return os.Expand(value, environ(r.env).Getenv), nil
 }
