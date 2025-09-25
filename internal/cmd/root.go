@@ -39,7 +39,7 @@ func init() {
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
 
-	rootCmd.Flags().StringVar(&clientHost, "host", server.DefaultHost(), "Connect to a specific crush server host (for advanced users)")
+	rootCmd.Flags().StringVarP(&clientHost, "host", "H", server.DefaultHost(), "Connect to a specific crush server host (for advanced users)")
 
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(updateProvidersCmd)
@@ -83,7 +83,6 @@ crush -y
 		case "unix", "npipe":
 			_, err := os.Stat(hostURL.Host)
 			if err != nil && errors.Is(err, fs.ErrNotExist) {
-				slog.Info("Starting server...", "host", clientHost)
 				if err := startDetachedServer(cmd); err != nil {
 					return err
 				}

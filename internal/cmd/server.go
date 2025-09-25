@@ -17,6 +17,11 @@ import (
 
 var serverHost string
 
+func init() {
+	serverCmd.Flags().StringVarP(&serverHost, "host", "H", server.DefaultHost(), "Server host (TCP or Unix socket)")
+	rootCmd.AddCommand(serverCmd)
+}
+
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Start the Crush server",
@@ -89,9 +94,4 @@ var serverCmd = &cobra.Command{
 
 		return nil
 	},
-}
-
-func init() {
-	serverCmd.Flags().StringVar(&serverHost, "host", server.DefaultHost(), "Server host (TCP or Unix socket)")
-	rootCmd.AddCommand(serverCmd)
 }
