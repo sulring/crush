@@ -595,12 +595,11 @@ func (c *controllerV1) handlePostInstances(w http.ResponseWriter, r *http.Reques
 	}
 
 	ins := &Instance{
-		App:   appInstance,
-		State: InstanceStateCreated,
-		id:    id,
-		path:  args.Path,
-		cfg:   cfg,
-		env:   args.Env,
+		App:  appInstance,
+		id:   id,
+		path: args.Path,
+		cfg:  cfg,
+		env:  args.Env,
 	}
 
 	c.instances.Set(id, ins)

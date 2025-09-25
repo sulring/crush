@@ -19,28 +19,15 @@ import (
 // ErrServerClosed is returned when the server is closed.
 var ErrServerClosed = http.ErrServerClosed
 
-// InstanceState represents the state of a running [app.App] instance.
-type InstanceState uint8
-
-const (
-	// InstanceStateCreated indicates that the instance has been created but not yet started.
-	InstanceStateCreated InstanceState = iota
-	// InstanceStateStarted indicates that the instance is currently running.
-	InstanceStateStarted
-	// InstanceStateStopped indicates that the instance has been stopped.
-	InstanceStateStopped
-)
-
 // Instance represents a running [app.App] instance with its associated
 // resources and state.
 type Instance struct {
 	*app.App
-	State InstanceState
-	ln    net.Listener
-	cfg   *config.Config
-	id    string
-	path  string
-	env   []string
+	ln   net.Listener
+	cfg  *config.Config
+	id   string
+	path string
+	env  []string
 }
 
 // ParseHostURL parses a host URL into a [url.URL].
