@@ -114,7 +114,7 @@ crush -y
 		}
 
 		for range 10 {
-			err = c.Health()
+			err = c.Health(cmd.Context())
 			if err == nil {
 				break
 			}
@@ -227,7 +227,7 @@ func setupApp(cmd *cobra.Command, hostURL *url.URL) (*client.Client, error) {
 
 	c.SetID(ins.ID)
 
-	cfg, err := c.GetGlobalConfig()
+	cfg, err := c.GetGlobalConfig(cmd.Context())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get global config: %v", err)
 	}
