@@ -1114,22 +1114,35 @@ func (a *agent) setupEvents(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
-		for event := range SubscribeMCPEvents(ctx) {
-			switch event.Payload.Type {
-			case MCPEventToolsListChanged:
-				name := event.Payload.Name
-				c, ok := mcpClients.Get(name)
+		subCh := SubscribeMCPEvents(ctx)
+
+		for {
+			select {
+			case event, ok := <-subCh:
 				if !ok {
-					slog.Warn("MCP client not found for tools update", "name", name)
+					slog.Debug("MCPEvents subscription channel closed")
+					return
+				}
+				switch event.Payload.Type {
+				case MCPEventToolsListChanged:
+					name := event.Payload.Name
+					c, ok := mcpClients.Get(name)
+					if !ok {
+						slog.Warn("MCP client not found for tools update", "name", name)
+						continue
+					}
+					cfg := config.Get()
+					tools := getTools(ctx, name, a.permissions, c, cfg.WorkingDir())
+					updateMcpTools(name, tools)
+					// Update the lazy map with the new tools
+					a.mcpTools = csync.NewMapFrom(maps.Collect(mcpTools.Seq2()))
+					updateMCPState(name, MCPStateConnected, nil, c, a.mcpTools.Len())
+				default:
 					continue
 				}
-				tools := getTools(ctx, name, c)
-				updateMcpTools(name, tools)
-				// Update the lazy map with the new tools
-				a.mcpTools = csync.NewMapFrom(maps.Collect(mcpTools.Seq2()))
-				updateMCPState(name, MCPStateConnected, nil, c, a.mcpTools.Len())
-			default:
-				continue
+			case <-ctx.Done():
+				slog.Debug("MCPEvents subscription cancelled")
+				return
 			}
 		}
 	}()
