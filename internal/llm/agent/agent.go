@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/event"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/llm/prompt"
 	"github.com/charmbracelet/crush/internal/llm/provider"
@@ -26,11 +27,7 @@ import (
 	"github.com/charmbracelet/crush/internal/shell"
 )
 
-// Common errors
-var (
-	ErrRequestCancelled = errors.New("request canceled by user")
-	ErrSessionBusy      = errors.New("session is currently processing another request")
-)
+const streamChunkTimeout = 80 * time.Second
 
 type AgentEventType string
 
@@ -73,8 +70,13 @@ type agent struct {
 	sessions session.Service
 	messages message.Service
 
-	baseTools *csync.Map[string, tools.BaseTool]
-	mcpTools  *csync.Map[string, tools.BaseTool]
+	permissions permission.Service
+	baseTools   *csync.Map[string, tools.BaseTool]
+	mcpTools    *csync.Map[string, tools.BaseTool]
+	lspClients  *csync.Map[string, *lsp.Client]
+
+	// We need this to be able to update it when model changes
+	agentToolFn func() (tools.BaseTool, error)
 
 	provider   provider.Provider
 	providerID string
@@ -84,8 +86,7 @@ type agent struct {
 	summarizeProviderID string
 
 	activeRequests *csync.Map[string, context.CancelFunc]
-
-	promptQueue *csync.Map[string, []string]
+	promptQueue    *csync.Map[string, []string]
 }
 
 var agentPromptMap = map[string]prompt.PromptID{
@@ -101,22 +102,23 @@ func NewAgent(
 	sessions session.Service,
 	messages message.Service,
 	history history.Service,
-	lspClients map[string]*lsp.Client,
+	lspClients *csync.Map[string, *lsp.Client],
 ) (Service, error) {
 	cfg := config.Get()
 
-	var agentTool tools.BaseTool
-	if agentCfg.ID == "coder" {
-		taskAgentCfg := config.Get().Agents["task"]
-		if taskAgentCfg.ID == "" {
-			return nil, fmt.Errorf("task agent not found in config")
+	var agentToolFn func() (tools.BaseTool, error)
+	if agentCfg.ID == "coder" && slices.Contains(agentCfg.AllowedTools, AgentToolName) {
+		agentToolFn = func() (tools.BaseTool, error) {
+			taskAgentCfg := config.Get().Agents["task"]
+			if taskAgentCfg.ID == "" {
+				return nil, fmt.Errorf("task agent not found in config")
+			}
+			taskAgent, err := NewAgent(ctx, taskAgentCfg, permissions, sessions, messages, history, lspClients)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create task agent: %w", err)
+			}
+			return NewAgentTool(taskAgent, sessions, messages), nil
 		}
-		taskAgent, err := NewAgent(ctx, taskAgentCfg, permissions, sessions, messages, history, lspClients)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create task agent: %w", err)
-		}
-
-		agentTool = NewAgentTool(taskAgent, sessions, messages)
 	}
 
 	providerCfg := config.Get().GetProviderForModel(agentCfg.Model)
@@ -186,7 +188,7 @@ func NewAgent(
 		cwd := cfg.WorkingDir()
 		result := make(map[string]tools.BaseTool)
 		for _, tool := range []tools.BaseTool{
-			tools.NewBashTool(permissions, cwd),
+			tools.NewBashTool(permissions, cwd, cfg.Options.Attribution),
 			tools.NewDownloadTool(permissions, cwd),
 			tools.NewEditTool(lspClients, permissions, history, cwd),
 			tools.NewMultiEditTool(lspClients, permissions, history, cwd),
@@ -200,16 +202,6 @@ func NewAgent(
 		} {
 			result[tool.Name()] = tool
 		}
-
-		if len(lspClients) > 0 {
-			diagnosticsTool := tools.NewDiagnosticsTool(lspClients)
-			result[diagnosticsTool.Name()] = diagnosticsTool
-		}
-
-		if agentTool != nil {
-			result[agentTool.Name()] = agentTool
-		}
-
 		return result
 	}
 	mcpToolsFn := func() map[string]tools.BaseTool {
@@ -221,7 +213,6 @@ func NewAgent(
 		mcpToolsOnce.Do(func() {
 			doGetMCPTools(ctx, permissions, cfg)
 		})
-
 		result := make(map[string]tools.BaseTool)
 		for _, mcpTool := range mcpTools.Seq2() {
 			result[mcpTool.Name()] = mcpTool
@@ -239,10 +230,13 @@ func NewAgent(
 		titleProvider:       titleProvider,
 		summarizeProvider:   summarizeProvider,
 		summarizeProviderID: string(providerCfg.ID),
+		agentToolFn:         agentToolFn,
 		activeRequests:      csync.NewMap[string, context.CancelFunc](),
 		mcpTools:            csync.NewLazyMap(mcpToolsFn),
 		baseTools:           csync.NewLazyMap(baseToolsFn),
 		promptQueue:         csync.NewMap[string, []string](),
+		permissions:         permissions,
+		lspClients:          lspClients,
 	}
 	a.setupEvents(ctx)
 	return a, nil
@@ -334,7 +328,13 @@ func (a *agent) generateTitle(ctx context.Context, sessionID string, content str
 		return fmt.Errorf("no response received from title provider")
 	}
 
-	title := strings.TrimSpace(strings.ReplaceAll(finalResponse.Content, "\n", " "))
+	title := strings.ReplaceAll(finalResponse.Content, "\n", " ")
+
+	if idx := strings.Index(title, "</think>"); idx > 0 {
+		title = title[idx+len("</think>"):]
+	}
+
+	title = strings.TrimSpace(title)
 	if title == "" {
 		return nil
 	}
@@ -355,7 +355,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	if !a.Model().SupportsImages && attachments != nil {
 		attachments = nil
 	}
-	events := make(chan AgentEvent)
+	events := make(chan AgentEvent, 1)
 	if a.IsSessionBusy(sessionID) {
 		existing, ok := a.promptQueue.Get(sessionID)
 		if !ok {
@@ -367,8 +367,9 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	}
 
 	genCtx, cancel := context.WithCancel(ctx)
-
 	a.activeRequests.Set(sessionID, cancel)
+	startTime := time.Now()
+
 	go func() {
 		slog.Debug("Request started", "sessionID", sessionID)
 		defer log.RecoverPanic("agent.Run", func() {
@@ -379,19 +380,24 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 			attachmentParts = append(attachmentParts, message.BinaryContent{Path: attachment.FilePath, MIMEType: attachment.MimeType, Data: attachment.Content})
 		}
 		result := a.processGeneration(genCtx, sessionID, content, attachmentParts)
-		if result.Error != nil && !errors.Is(result.Error, ErrRequestCancelled) && !errors.Is(result.Error, context.Canceled) {
-			slog.Error(result.Error.Error())
+		if result.Error != nil {
+			if isCancelledErr(result.Error) {
+				slog.Error("Request canceled", "sessionID", sessionID)
+			} else {
+				slog.Error("Request errored", "sessionID", sessionID, "error", result.Error.Error())
+				event.Error(result.Error)
+			}
+		} else {
+			slog.Debug("Request completed", "sessionID", sessionID)
 		}
-		slog.Debug("Request completed", "sessionID", sessionID)
+		a.eventPromptResponded(sessionID, time.Since(startTime).Truncate(time.Second))
 		a.activeRequests.Del(sessionID)
 		cancel()
 		a.Publish(pubsub.CreatedEvent, result)
-		select {
-		case events <- result:
-		case <-genCtx.Done():
-		}
+		events <- result
 		close(events)
 	}()
+	a.eventPromptSent(sessionID)
 	return events, nil
 }
 
@@ -407,7 +413,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			defer log.RecoverPanic("agent.Run", func() {
 				slog.Error("panic while generating title")
 			})
-			titleErr := a.generateTitle(context.Background(), sessionID, content)
+			titleErr := a.generateTitle(ctx, sessionID, content)
 			if titleErr != nil && !errors.Is(titleErr, context.Canceled) && !errors.Is(titleErr, context.DeadlineExceeded) {
 				slog.Error("failed to generate title", "error", titleErr)
 			}
@@ -515,6 +521,41 @@ func (a *agent) createUserMessage(ctx context.Context, sessionID, content string
 	})
 }
 
+func (a *agent) getAllTools() ([]tools.BaseTool, error) {
+	allTools := slices.Collect(a.baseTools.Seq())
+
+	withCoderTools := func(t []tools.BaseTool) []tools.BaseTool {
+		if a.agentCfg.ID == "coder" {
+			t = append(t, slices.Collect(a.mcpTools.Seq())...)
+			if a.lspClients.Len() > 0 {
+				t = append(t, tools.NewDiagnosticsTool(a.lspClients))
+			}
+		}
+		return t
+	}
+
+	if a.agentCfg.AllowedTools == nil {
+		allTools = withCoderTools(allTools)
+	} else {
+		var filteredTools []tools.BaseTool
+		for _, tool := range allTools {
+			if slices.Contains(a.agentCfg.AllowedTools, tool.Name()) {
+				filteredTools = append(filteredTools, tool)
+			}
+		}
+		allTools = withCoderTools(filteredTools)
+	}
+
+	if a.agentToolFn != nil {
+		agentTool, agentToolErr := a.agentToolFn()
+		if agentToolErr != nil {
+			return nil, agentToolErr
+		}
+		allTools = append(allTools, agentTool)
+	}
+	return allTools, nil
+}
+
 func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message) (message.Message, *message.Message, error) {
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
 
@@ -529,23 +570,36 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 		return assistantMsg, nil, fmt.Errorf("failed to create assistant message: %w", err)
 	}
 
+	allTools, toolsErr := a.getAllTools()
+	if toolsErr != nil {
+		return assistantMsg, nil, toolsErr
+	}
 	// Now collect tools (which may block on MCP initialization)
-	eventChan := a.provider.StreamResponse(ctx, msgHistory, a.allTools())
+	eventChan := a.provider.StreamResponse(ctx, msgHistory, allTools)
 
 	// Add the session and message ID into the context if needed by tools.
 	ctx = context.WithValue(ctx, tools.MessageIDContextKey, assistantMsg.ID)
 
 	// Process each event in the stream.
-	for event := range eventChan {
-		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event); processErr != nil {
-			if errors.Is(processErr, context.Canceled) {
-				a.finishMessage(context.Background(), &assistantMsg, message.FinishReasonCanceled, "Request cancelled", "")
-			} else {
-				a.finishMessage(ctx, &assistantMsg, message.FinishReasonError, "API Error", processErr.Error())
+loop:
+	for {
+		select {
+		case event, ok := <-eventChan:
+			if !ok {
+				break loop
 			}
-			return assistantMsg, nil, processErr
-		}
-		if ctx.Err() != nil {
+			if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event); processErr != nil {
+				if errors.Is(processErr, context.Canceled) {
+					a.finishMessage(context.Background(), &assistantMsg, message.FinishReasonCanceled, "Request cancelled", "")
+				} else {
+					a.finishMessage(ctx, &assistantMsg, message.FinishReasonError, "API Error", processErr.Error())
+				}
+				return assistantMsg, nil, processErr
+			}
+		case <-time.After(streamChunkTimeout):
+			a.finishMessage(ctx, &assistantMsg, message.FinishReasonError, "Stream timeout", "No chunk received within timeout")
+			return assistantMsg, nil, fmt.Errorf("stream chunk timeout")
+		case <-ctx.Done():
 			a.finishMessage(context.Background(), &assistantMsg, message.FinishReasonCanceled, "Request cancelled", "")
 			return assistantMsg, nil, ctx.Err()
 		}
@@ -568,10 +622,17 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			goto out
 		default:
 			// Continue processing
-			tool, ok := a.getToolByName(toolCall.Name)
+			var tool tools.BaseTool
+			allTools, _ = a.getAllTools()
+			for _, availableTool := range allTools {
+				if availableTool.Info().Name == toolCall.Name {
+					tool = availableTool
+					break
+				}
+			}
 
 			// Tool not found
-			if !ok {
+			if tool == nil {
 				toolResults[i] = message.ToolResult{
 					ToolCallID: toolCall.ID,
 					Content:    fmt.Sprintf("Tool not found: %s", toolCall.Name),
@@ -708,13 +769,13 @@ func (a *agent) processEvent(ctx context.Context, sessionID string, assistantMsg
 		if err := a.messages.Update(ctx, *assistantMsg); err != nil {
 			return fmt.Errorf("failed to update message: %w", err)
 		}
-		return a.TrackUsage(ctx, sessionID, a.Model(), event.Response.Usage)
+		return a.trackUsage(ctx, sessionID, a.Model(), event.Response.Usage)
 	}
 
 	return nil
 }
 
-func (a *agent) TrackUsage(ctx context.Context, sessionID string, model catwalk.Model, usage provider.TokenUsage) error {
+func (a *agent) trackUsage(ctx context.Context, sessionID string, model catwalk.Model, usage provider.TokenUsage) error {
 	sess, err := a.sessions.Get(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
@@ -724,6 +785,8 @@ func (a *agent) TrackUsage(ctx context.Context, sessionID string, model catwalk.
 		model.CostPer1MOutCached/1e6*float64(usage.CacheReadTokens) +
 		model.CostPer1MIn/1e6*float64(usage.InputTokens) +
 		model.CostPer1MOut/1e6*float64(usage.OutputTokens)
+
+	a.eventTokensUsed(sessionID, usage, cost)
 
 	sess.Cost += cost
 	sess.CompletionTokens = usage.OutputTokens + usage.CacheReadTokens
@@ -820,7 +883,7 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 			if r.Error != nil {
 				event = AgentEvent{
 					Type:  AgentEventTypeError,
-					Error: fmt.Errorf("failed to summarize: %w", err),
+					Error: fmt.Errorf("failed to summarize: %w", r.Error),
 					Done:  true,
 				}
 				a.Publish(pubsub.CreatedEvent, event)
@@ -1008,11 +1071,17 @@ func (a *agent) UpdateModel() error {
 		return fmt.Errorf("provider %s not found in config", largeModelCfg.Provider)
 	}
 
+	var maxTitleTokens int64 = 40
+
+	// if the max output is too low for the gemini provider it won't return anything
+	if smallModelCfg.Provider == "gemini" {
+		maxTitleTokens = 1000
+	}
 	// Recreate title provider
 	titleOpts := []provider.ProviderClientOption{
 		provider.WithModel(config.SelectedModelTypeSmall),
 		provider.WithSystemMessage(prompt.GetPrompt(prompt.PromptTitle, smallModelProviderCfg.ID)),
-		provider.WithMaxTokens(40),
+		provider.WithMaxTokens(maxTitleTokens),
 	}
 	newTitleProvider, err := provider.NewProvider(smallModelProviderCfg, titleOpts...)
 	if err != nil {
@@ -1039,20 +1108,6 @@ func (a *agent) UpdateModel() error {
 	}
 
 	return nil
-}
-
-func (a *agent) allTools() []tools.BaseTool {
-	result := slices.Collect(a.baseTools.Seq())
-	result = slices.AppendSeq(result, a.mcpTools.Seq())
-	return result
-}
-
-func (a *agent) getToolByName(name string) (tools.BaseTool, bool) {
-	tool, ok := a.baseTools.Get(name)
-	if !ok {
-		tool, ok = a.mcpTools.Get(name)
-	}
-	return tool, ok
 }
 
 func (a *agent) setupEvents(ctx context.Context) {
