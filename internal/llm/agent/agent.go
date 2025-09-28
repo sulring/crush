@@ -213,11 +213,8 @@ func NewAgent(
 		mcpToolsOnce.Do(func() {
 			doGetMCPTools(ctx, permissions, cfg)
 		})
-		result := make(map[string]tools.BaseTool)
-		for _, mcpTool := range mcpTools.Seq2() {
-			result[mcpTool.Name()] = mcpTool
-		}
-		return result
+
+		return maps.Collect(mcpTools.Seq2())
 	}
 
 	a := &agent{
