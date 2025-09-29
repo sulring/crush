@@ -44,13 +44,6 @@ func PromptSent(props ...any) {
 	)
 }
 
-func PromptResponded(props ...any) {
-	send(
-		"prompt responded",
-		props...,
-	)
-}
-
 func TokensUsed(props ...any) {
 	send(
 		"tokens used",

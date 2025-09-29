@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"time"
-
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/event"
 	"github.com/charmbracelet/crush/internal/llm/provider"
@@ -11,16 +9,6 @@ import (
 func (a *agent) eventPromptSent(sessionID string) {
 	event.PromptSent(
 		a.eventCommon(sessionID)...,
-	)
-}
-
-func (a *agent) eventPromptResponded(sessionID string, duration time.Duration) {
-	event.PromptResponded(
-		append(
-			a.eventCommon(sessionID),
-			"prompt duration pretty", duration.String(),
-			"prompt duration in seconds", int64(duration.Seconds()),
-		)...,
 	)
 }
 

@@ -365,7 +365,6 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 
 	genCtx, cancel := context.WithCancel(ctx)
 	a.activeRequests.Set(sessionID, cancel)
-	startTime := time.Now()
 
 	go func() {
 		slog.Debug("Request started", "sessionID", sessionID)
@@ -387,7 +386,6 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 		} else {
 			slog.Debug("Request completed", "sessionID", sessionID)
 		}
-		a.eventPromptResponded(sessionID, time.Since(startTime).Truncate(time.Second))
 		a.activeRequests.Del(sessionID)
 		cancel()
 		a.Publish(pubsub.CreatedEvent, result)
