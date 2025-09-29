@@ -197,13 +197,10 @@ func (b *McpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 	return runTool(ctx, b.mcpName, b.tool.Name, params.Input)
 }
 
-func getTools(ctx context.Context, name string, permissions permission.Service, c *client.Client, workingDir string) []tools.BaseTool {
+func getTools(ctx context.Context, name string, permissions permission.Service, c *client.Client, workingDir string) ([]tools.BaseTool, error) {
 	result, err := c.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
-		slog.Error("error listing tools", "error", err)
-		updateMCPState(name, MCPStateError, err, nil, 0)
-		c.Close()
-		return nil
+		return nil, err
 	}
 	mcpTools := make([]tools.BaseTool, 0, len(result.Tools))
 	for _, tool := range result.Tools {
@@ -214,7 +211,7 @@ func getTools(ctx context.Context, name string, permissions permission.Service, 
 			workingDir:  workingDir,
 		})
 	}
-	return mcpTools
+	return mcpTools, nil
 }
 
 // SubscribeMCPEvents returns a channel for MCP events
@@ -324,6 +321,7 @@ func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *con
 
 			ctx, cancel := context.WithTimeout(ctx, mcpTimeout(m))
 			defer cancel()
+
 			c, err := createAndInitializeClient(ctx, name, m, cfg.Resolver())
 			if err != nil {
 				return
@@ -331,8 +329,16 @@ func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *con
 
 			mcpClients.Set(name, c)
 
-			tools := getTools(ctx, name, permissions, c, cfg.WorkingDir())
+			tools, err := getTools(ctx, name, permissions, c, cfg.WorkingDir())
+			if err != nil {
+				slog.Error("error listing tools", "error", err)
+				updateMCPState(name, MCPStateError, err, nil, 0)
+				c.Close()
+				return
+			}
+
 			updateMcpTools(name, tools)
+			mcpClients.Set(name, c)
 			updateMCPState(name, MCPStateConnected, nil, c, len(tools))
 		}(name, m)
 	}
@@ -375,8 +381,8 @@ func createAndInitializeClient(ctx context.Context, name string, m config.MCPCon
 	initCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	if err := c.Start(ctx); err != nil {
-		updateMCPState(name, MCPStateError, err, nil, 0)
+	if err := c.Start(initCtx); err != nil {
+		updateMCPState(name, MCPStateError, maybeTimeoutErr(err, timeout), nil, 0)
 		slog.Error("error starting mcp client", "error", err, "name", name)
 		_ = c.Close()
 		return nil, err

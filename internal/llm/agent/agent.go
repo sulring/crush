@@ -27,8 +27,6 @@ import (
 	"github.com/charmbracelet/crush/internal/shell"
 )
 
-const streamChunkTimeout = 80 * time.Second
-
 type AgentEventType string
 
 const (
@@ -577,7 +575,6 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 	// Add the session and message ID into the context if needed by tools.
 	ctx = context.WithValue(ctx, tools.MessageIDContextKey, assistantMsg.ID)
 
-	// Process each event in the stream.
 loop:
 	for {
 		select {
@@ -593,9 +590,6 @@ loop:
 				}
 				return assistantMsg, nil, processErr
 			}
-		case <-time.After(streamChunkTimeout):
-			a.finishMessage(ctx, &assistantMsg, message.FinishReasonError, "Stream timeout", "No chunk received within timeout")
-			return assistantMsg, nil, fmt.Errorf("stream chunk timeout")
 		case <-ctx.Done():
 			a.finishMessage(context.Background(), &assistantMsg, message.FinishReasonCanceled, "Request cancelled", "")
 			return assistantMsg, nil, ctx.Err()
@@ -1129,7 +1123,13 @@ func (a *agent) setupEvents(ctx context.Context) {
 						continue
 					}
 					cfg := config.Get()
-					tools := getTools(ctx, name, a.permissions, c, cfg.WorkingDir())
+					tools, err := getTools(ctx, name, a.permissions, c, cfg.WorkingDir())
+					if err != nil {
+						slog.Error("error listing tools", "error", err)
+						updateMCPState(name, MCPStateError, err, nil, 0)
+						_ = c.Close()
+						continue
+					}
 					updateMcpTools(name, tools)
 					// Update the lazy map with the new tools
 					a.mcpTools = csync.NewMapFrom(maps.Collect(mcpTools.Seq2()))
@@ -1144,7 +1144,5 @@ func (a *agent) setupEvents(ctx context.Context) {
 		}
 	}()
 
-	a.cleanupFuncs = append(a.cleanupFuncs, func() {
-		cancel()
-	})
+	a.cleanupFuncs = append(a.cleanupFuncs, cancel)
 }
