@@ -72,6 +72,22 @@ func TestNewLazyMap(t *testing.T) {
 	})
 }
 
+func TestMap_Reset(t *testing.T) {
+	t.Parallel()
+
+	m := NewMapFrom(map[string]int{
+		"a": 10,
+	})
+
+	m.Reset(map[string]int{
+		"b": 20,
+	})
+	value, ok := m.Get("b")
+	require.True(t, ok)
+	require.Equal(t, 20, value)
+	require.Equal(t, 1, m.Len())
+}
+
 func TestMap_Set(t *testing.T) {
 	t.Parallel()
 

@@ -1129,8 +1129,7 @@ func (a *agent) setupEvents(ctx context.Context) {
 						continue
 					}
 					updateMcpTools(name, tools)
-					// Update the lazy map with the new tools
-					a.mcpTools = csync.NewMapFrom(maps.Collect(mcpTools.Seq2()))
+					a.mcpTools.Reset(maps.Collect(mcpTools.Seq2()))
 					updateMCPState(name, MCPStateConnected, nil, c, a.mcpTools.Len())
 				default:
 					continue
