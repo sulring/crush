@@ -61,20 +61,18 @@ type Service interface {
 }
 
 type agent struct {
-	cleanupFuncs []func()
-
 	*pubsub.Broker[AgentEvent]
-	agentCfg config.Agent
-	sessions session.Service
-	messages message.Service
-
+	agentCfg    config.Agent
+	sessions    session.Service
+	messages    message.Service
 	permissions permission.Service
 	baseTools   *csync.Map[string, tools.BaseTool]
 	mcpTools    *csync.Map[string, tools.BaseTool]
 	lspClients  *csync.Map[string, *lsp.Client]
 
 	// We need this to be able to update it when model changes
-	agentToolFn func() (tools.BaseTool, error)
+	agentToolFn  func() (tools.BaseTool, error)
+	cleanupFuncs []func()
 
 	provider   provider.Provider
 	providerID string
