@@ -600,7 +600,7 @@ loop:
 		default:
 			// Continue processing
 			var tool tools.BaseTool
-			allTools, _ = a.getAllTools()
+			allTools, _ := a.getAllTools()
 			for _, availableTool := range allTools {
 				if availableTool.Info().Name == toolCall.Name {
 					tool = availableTool
