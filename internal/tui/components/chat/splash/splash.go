@@ -2,8 +2,6 @@ package splash
 
 import (
 	"fmt"
-	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -12,12 +10,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/llm/prompt"
 	"github.com/charmbracelet/crush/internal/tui/components/chat"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/components/core/layout"
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs/models"
 	"github.com/charmbracelet/crush/internal/tui/components/logo"
+	lspcomponent "github.com/charmbracelet/crush/internal/tui/components/lsp"
+	"github.com/charmbracelet/crush/internal/tui/components/mcp"
 	"github.com/charmbracelet/crush/internal/tui/exp/list"
 	"github.com/charmbracelet/crush/internal/tui/styles"
 	"github.com/charmbracelet/crush/internal/tui/util"
@@ -101,27 +102,6 @@ func New() Splash {
 
 func (s *splashCmp) SetOnboarding(onboarding bool) {
 	s.isOnboarding = onboarding
-	if onboarding {
-		providers, err := config.Providers()
-		if err != nil {
-			return
-		}
-		filteredProviders := []catwalk.Provider{}
-		simpleProviders := []string{
-			"anthropic",
-			"openai",
-			"gemini",
-			"xai",
-			"groq",
-			"openrouter",
-		}
-		for _, p := range providers {
-			if slices.Contains(simpleProviders, string(p.ID)) {
-				filteredProviders = append(filteredProviders, p)
-			}
-		}
-		s.modelList.SetProviders(filteredProviders)
-	}
 }
 
 func (s *splashCmp) SetProjectInit(needsInit bool) {
@@ -273,6 +253,7 @@ func (s *splashCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return s, cmd
 			}
 			if s.needsProjectInit {
+				s.selectedNo = false
 				return s, s.initializeProject()
 			}
 		case key.Matches(msg, s.keyMap.No):
@@ -417,7 +398,8 @@ func (s *splashCmp) setPreferredModel(selectedItem models.ModelOption) tea.Cmd {
 }
 
 func (s *splashCmp) getProvider(providerID catwalk.InferenceProvider) (*catwalk.Provider, error) {
-	providers, err := config.Providers()
+	cfg := config.Get()
+	providers, err := config.Providers(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -472,12 +454,15 @@ func (s *splashCmp) View() string {
 		)
 	} else if s.needsProjectInit {
 		titleStyle := t.S().Base.Foreground(t.FgBase)
+		pathStyle := t.S().Base.Foreground(t.Success).PaddingLeft(2)
 		bodyStyle := t.S().Base.Foreground(t.FgMuted)
 		shortcutStyle := t.S().Base.Foreground(t.Success)
 
 		initText := lipgloss.JoinVertical(
 			lipgloss.Left,
 			titleStyle.Render("Would you like to initialize this project?"),
+			"",
+			pathStyle.Render(s.cwd()),
 			"",
 			bodyStyle.Render("When I initialize your codebase I examine the project and put the"),
 			bodyStyle.Render("result into a CRUSH.md file which serves as general context."),
@@ -565,7 +550,7 @@ func (s *splashCmp) infoSection() string {
 	return infoStyle.Render(
 		lipgloss.JoinVertical(
 			lipgloss.Left,
-			s.cwd(),
+			s.cwdPart(),
 			"",
 			s.currentModelBlock(),
 			"",
@@ -655,44 +640,24 @@ func (s *splashCmp) Bindings() []key.Binding {
 }
 
 func (s *splashCmp) getMaxInfoWidth() int {
-	return min(s.width-2, 40) // 2 for left padding
+	return min(s.width-2, 90) // 2 for left padding
+}
+
+func (s *splashCmp) cwdPart() string {
+	t := styles.CurrentTheme()
+	maxWidth := s.getMaxInfoWidth()
+	return t.S().Muted.Width(maxWidth).Render(s.cwd())
 }
 
 func (s *splashCmp) cwd() string {
-	cwd := config.Get().WorkingDir()
-	t := styles.CurrentTheme()
-	homeDir, err := os.UserHomeDir()
-	if err == nil && cwd != homeDir {
-		cwd = strings.ReplaceAll(cwd, homeDir, "~")
-	}
-	maxWidth := s.getMaxInfoWidth()
-	return t.S().Muted.Width(maxWidth).Render(cwd)
+	return home.Short(config.Get().WorkingDir())
 }
 
 func LSPList(maxWidth int) []string {
-	t := styles.CurrentTheme()
-	lspList := []string{}
-	lsp := config.Get().LSP.Sorted()
-	if len(lsp) == 0 {
-		return []string{t.S().Base.Foreground(t.Border).Render("None")}
-	}
-	for _, l := range lsp {
-		iconColor := t.Success
-		if l.LSP.Disabled {
-			iconColor = t.FgMuted
-		}
-		lspList = append(lspList,
-			core.Status(
-				core.StatusOpts{
-					IconColor:   iconColor,
-					Title:       l.Name,
-					Description: l.LSP.Command,
-				},
-				maxWidth,
-			),
-		)
-	}
-	return lspList
+	return lspcomponent.RenderLSPList(nil, lspcomponent.RenderOptions{
+		MaxWidth:    maxWidth,
+		ShowSection: false,
+	})
 }
 
 func (s *splashCmp) lspBlock() string {
@@ -709,29 +674,10 @@ func (s *splashCmp) lspBlock() string {
 }
 
 func MCPList(maxWidth int) []string {
-	t := styles.CurrentTheme()
-	mcpList := []string{}
-	mcps := config.Get().MCP.Sorted()
-	if len(mcps) == 0 {
-		return []string{t.S().Base.Foreground(t.Border).Render("None")}
-	}
-	for _, l := range mcps {
-		iconColor := t.Success
-		if l.MCP.Disabled {
-			iconColor = t.FgMuted
-		}
-		mcpList = append(mcpList,
-			core.Status(
-				core.StatusOpts{
-					IconColor:   iconColor,
-					Title:       l.Name,
-					Description: l.MCP.Command,
-				},
-				maxWidth,
-			),
-		)
-	}
-	return mcpList
+	return mcp.RenderMCPList(mcp.RenderOptions{
+		MaxWidth:    maxWidth,
+		ShowSection: false,
+	})
 }
 
 func (s *splashCmp) mcpBlock() string {

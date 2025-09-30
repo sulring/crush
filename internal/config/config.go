@@ -20,7 +20,6 @@ import (
 const (
 	appName              = "crush"
 	defaultDataDirectory = ".crush"
-	defaultLogLevel      = "info"
 )
 
 var defaultContextPaths = []string{
@@ -111,20 +110,26 @@ type MCPConfig struct {
 	Type     MCPType           `json:"type" jsonschema:"required,description=Type of MCP connection,enum=stdio,enum=sse,enum=http,default=stdio"`
 	URL      string            `json:"url,omitempty" jsonschema:"description=URL for HTTP or SSE MCP servers,format=uri,example=http://localhost:3000/mcp"`
 	Disabled bool              `json:"disabled,omitempty" jsonschema:"description=Whether this MCP server is disabled,default=false"`
+	Timeout  int               `json:"timeout,omitempty" jsonschema:"description=Timeout in seconds for MCP server connections,default=15,example=30,example=60,example=120"`
 
 	// TODO: maybe make it possible to get the value from the env
 	Headers map[string]string `json:"headers,omitempty" jsonschema:"description=HTTP headers for HTTP/SSE MCP servers"`
 }
 
 type LSPConfig struct {
-	Disabled bool     `json:"enabled,omitempty" jsonschema:"description=Whether this LSP server is disabled,default=false"`
-	Command  string   `json:"command" jsonschema:"required,description=Command to execute for the LSP server,example=gopls"`
-	Args     []string `json:"args,omitempty" jsonschema:"description=Arguments to pass to the LSP server command"`
-	Options  any      `json:"options,omitempty" jsonschema:"description=LSP server-specific configuration options"`
+	Disabled    bool              `json:"disabled,omitempty" jsonschema:"description=Whether this LSP server is disabled,default=false"`
+	Command     string            `json:"command,omitempty" jsonschema:"required,description=Command to execute for the LSP server,example=gopls"`
+	Args        []string          `json:"args,omitempty" jsonschema:"description=Arguments to pass to the LSP server command"`
+	Env         map[string]string `json:"env,omitempty" jsonschema:"description=Environment variables to set to the LSP server command"`
+	FileTypes   []string          `json:"filetypes,omitempty" jsonschema:"description=File types this LSP server handles,example=go,example=mod,example=rs,example=c,example=js,example=ts"`
+	RootMarkers []string          `json:"root_markers,omitempty" jsonschema:"description=Files or directories that indicate the project root,example=go.mod,example=package.json,example=Cargo.toml"`
+	InitOptions map[string]any    `json:"init_options,omitempty" jsonschema:"description=Initialization options passed to the LSP server during initialize request"`
+	Options     map[string]any    `json:"options,omitempty" jsonschema:"description=LSP server-specific settings passed during initialization"`
 }
 
 type TUIOptions struct {
-	CompactMode bool `json:"compact_mode,omitempty" jsonschema:"description=Enable compact mode for the TUI interface,default=false"`
+	CompactMode bool   `json:"compact_mode,omitempty" jsonschema:"description=Enable compact mode for the TUI interface,default=false"`
+	DiffMode    string `json:"diff_mode,omitempty" jsonschema:"description=Diff mode for the TUI interface,enum=unified,enum=split"`
 	// Here we can add themes later or any TUI related options
 }
 
@@ -133,13 +138,22 @@ type Permissions struct {
 	SkipRequests bool     `json:"-"`                                                                                                                              // Automatically accept all permissions (YOLO mode)
 }
 
+type Attribution struct {
+	CoAuthoredBy  bool `json:"co_authored_by,omitempty" jsonschema:"description=Add Co-Authored-By trailer to commit messages,default=true"`
+	GeneratedWith bool `json:"generated_with,omitempty" jsonschema:"description=Add Generated with Crush line to commit messages and issues and PRs,default=true"`
+}
+
 type Options struct {
-	ContextPaths         []string    `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=CRUSH.md"`
-	TUI                  *TUIOptions `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
-	Debug                bool        `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
-	DebugLSP             bool        `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
-	DisableAutoSummarize bool        `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
-	DataDirectory        string      `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.crush,example=.crush"` // Relative to the cwd
+	ContextPaths              []string     `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=CRUSH.md"`
+	TUI                       *TUIOptions  `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
+	Debug                     bool         `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
+	DebugLSP                  bool         `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
+	DisableAutoSummarize      bool         `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
+	DataDirectory             string       `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.crush,example=.crush"` // Relative to the cwd
+	DisabledTools             []string     `json:"disabled_tools" jsonschema:"description=Tools to disable"`
+	DisableProviderAutoUpdate bool         `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
+	Attribution               *Attribution `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
+	DisableMetrics            bool         `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
 }
 
 type MCPs map[string]MCPConfig
@@ -184,22 +198,12 @@ func (l LSPs) Sorted() []LSP {
 	return sorted
 }
 
-func (m MCPConfig) ResolvedEnv() []string {
-	resolver := NewShellVariableResolver(env.New())
-	for e, v := range m.Env {
-		var err error
-		m.Env[e], err = resolver.ResolveValue(v)
-		if err != nil {
-			slog.Error("error resolving environment variable", "error", err, "variable", e, "value", v)
-			continue
-		}
-	}
+func (l LSPConfig) ResolvedEnv() []string {
+	return resolveEnvs(l.Env)
+}
 
-	env := make([]string, 0, len(m.Env))
-	for k, v := range m.Env {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	return env
+func (m MCPConfig) ResolvedEnv() []string {
+	return resolveEnvs(m.Env)
 }
 
 func (m MCPConfig) ResolvedHeaders() map[string]string {
@@ -244,6 +248,8 @@ type Agent struct {
 
 // Config holds the configuration for crush.
 type Config struct {
+	Schema string `json:"$schema,omitempty"`
+
 	// We currently only support large/small as values here.
 	Models map[SelectedModelType]SelectedModel `json:"models,omitempty" jsonschema:"description=Model configurations for different model types,example={\"large\":{\"model\":\"gpt-4o\",\"provider\":\"openai\"}}"`
 
@@ -420,7 +426,52 @@ func (c *Config) SetProviderAPIKey(providerID, apiKey string) error {
 	return nil
 }
 
+func allToolNames() []string {
+	return []string{
+		"agent",
+		"bash",
+		"download",
+		"edit",
+		"multiedit",
+		"fetch",
+		"glob",
+		"grep",
+		"ls",
+		"sourcegraph",
+		"view",
+		"write",
+	}
+}
+
+func resolveAllowedTools(allTools []string, disabledTools []string) []string {
+	if disabledTools == nil {
+		return allTools
+	}
+	// filter out disabled tools (exclude mode)
+	return filterSlice(allTools, disabledTools, false)
+}
+
+func resolveReadOnlyTools(tools []string) []string {
+	readOnlyTools := []string{"glob", "grep", "ls", "sourcegraph", "view"}
+	// filter to only include tools that are in allowedtools (include mode)
+	return filterSlice(tools, readOnlyTools, true)
+}
+
+func filterSlice(data []string, mask []string, include bool) []string {
+	filtered := []string{}
+	for _, s := range data {
+		// if include is true, we include items that ARE in the mask
+		// if include is false, we include items that are NOT in the mask
+		if include == slices.Contains(mask, s) {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
+}
+
 func (c *Config) SetupAgents() {
+	allowedTools := resolveAllowedTools(allToolNames(), c.Options.DisabledTools)
+
 	agents := map[string]Agent{
 		"coder": {
 			ID:           "coder",
@@ -428,7 +479,7 @@ func (c *Config) SetupAgents() {
 			Description:  "An agent that helps with executing coding tasks.",
 			Model:        SelectedModelTypeLarge,
 			ContextPaths: c.Options.ContextPaths,
-			// All tools allowed
+			AllowedTools: allowedTools,
 		},
 		"task": {
 			ID:           "task",
@@ -436,13 +487,7 @@ func (c *Config) SetupAgents() {
 			Description:  "An agent that helps with searching for context and finding implementation details.",
 			Model:        SelectedModelTypeLarge,
 			ContextPaths: c.Options.ContextPaths,
-			AllowedTools: []string{
-				"glob",
-				"grep",
-				"ls",
-				"sourcegraph",
-				"view",
-			},
+			AllowedTools: resolveReadOnlyTools(allowedTools),
 			// NO MCPs or LSPs by default
 			AllowedMCP: map[string][]string{},
 			AllowedLSP: []string{},
@@ -465,7 +510,11 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
-		testURL = baseURL + "/models"
+		if c.ID == string(catwalk.InferenceProviderOpenRouter) {
+			testURL = baseURL + "/credits"
+		} else {
+			testURL = baseURL + "/models"
+		}
 		headers["Authorization"] = "Bearer " + apiKey
 	case catwalk.TypeAnthropic:
 		baseURL, _ := resolver.ResolveValue(c.BaseURL)
@@ -499,9 +548,34 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request for provider %s: %w", c.ID, err)
 	}
-	if b.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to connect to provider %s: %s", c.ID, b.Status)
+	if c.ID == string(catwalk.InferenceProviderZAI) {
+		if b.StatusCode == http.StatusUnauthorized {
+			// for z.ai just check if the http response is not 401
+			return fmt.Errorf("failed to connect to provider %s: %s", c.ID, b.Status)
+		}
+	} else {
+		if b.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to connect to provider %s: %s", c.ID, b.Status)
+		}
 	}
 	_ = b.Body.Close()
 	return nil
+}
+
+func resolveEnvs(envs map[string]string) []string {
+	resolver := NewShellVariableResolver(env.New())
+	for e, v := range envs {
+		var err error
+		envs[e], err = resolver.ResolveValue(v)
+		if err != nil {
+			slog.Error("error resolving environment variable", "error", err, "variable", e, "value", v)
+			continue
+		}
+	}
+
+	res := make([]string, 0, len(envs))
+	for k, v := range envs {
+		res = append(res, fmt.Sprintf("%s=%s", k, v))
+	}
+	return res
 }

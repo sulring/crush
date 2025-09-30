@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -79,6 +80,13 @@ func createAnthropicClient(opts providerClientOptions, tp AnthropicClientType) a
 		slog.Debug("Skipping X-Api-Key header because Authorization header is provided")
 	}
 
+	if opts.baseURL != "" {
+		resolvedBaseURL, err := config.Get().Resolve(opts.baseURL)
+		if err == nil && resolvedBaseURL != "" {
+			anthropicClientOptions = append(anthropicClientOptions, option.WithBaseURL(resolvedBaseURL))
+		}
+	}
+
 	if config.Get().Options.Debug {
 		httpClient := log.NewHTTPClient()
 		anthropicClientOptions = append(anthropicClientOptions, option.WithHTTPClient(httpClient))
@@ -144,6 +152,9 @@ func (a *anthropicClient) convertMessages(messages []message.Message) (anthropic
 			}
 
 			for _, toolCall := range msg.ToolCalls() {
+				if !toolCall.Finished {
+					continue
+				}
 				var inputMap map[string]any
 				err := json.Unmarshal([]byte(toolCall.Input), &inputMap)
 				if err != nil {
@@ -153,7 +164,6 @@ func (a *anthropicClient) convertMessages(messages []message.Message) (anthropic
 			}
 
 			if len(blocks) == 0 {
-				slog.Warn("There is a message without content, investigate, this should not happen")
 				continue
 			}
 			anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
@@ -166,10 +176,13 @@ func (a *anthropicClient) convertMessages(messages []message.Message) (anthropic
 			anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(results...))
 		}
 	}
-	return
+	return anthropicMessages
 }
 
 func (a *anthropicClient) convertTools(tools []tools.BaseTool) []anthropic.ToolUnionParam {
+	if len(tools) == 0 {
+		return nil
+	}
 	anthropicTools := make([]anthropic.ToolUnionParam, len(tools))
 
 	for i, tool := range tools {
@@ -179,7 +192,7 @@ func (a *anthropicClient) convertTools(tools []tools.BaseTool) []anthropic.ToolU
 			Description: anthropic.String(info.Description),
 			InputSchema: anthropic.ToolInputSchemaParam{
 				Properties: info.Parameters,
-				// TODO: figure out how we can tell claude the required fields?
+				Required:   info.Required,
 			},
 		}
 
@@ -253,9 +266,6 @@ func (a *anthropicClient) preparedMessages(messages []anthropic.MessageParam, to
 	if a.providerOptions.systemPromptPrefix != "" {
 		systemBlocks = append(systemBlocks, anthropic.TextBlockParam{
 			Text: a.providerOptions.systemPromptPrefix,
-			CacheControl: anthropic.CacheControlEphemeralParam{
-				Type: "ephemeral",
-			},
 		})
 	}
 
@@ -295,13 +305,12 @@ func (a *anthropicClient) send(ctx context.Context, messages []message.Message, 
 		)
 		// If there is an error we are going to see if we can retry the call
 		if err != nil {
-			slog.Error("Anthropic API error", "error", err.Error(), "attempt", attempts, "max_retries", maxRetries)
 			retry, after, retryErr := a.shouldRetry(attempts, err)
 			if retryErr != nil {
 				return nil, retryErr
 			}
 			if retry {
-				slog.Warn("Retrying due to rate limit", "attempt", attempts, "max_retries", maxRetries)
+				slog.Warn("Retrying due to rate limit", "attempt", attempts, "max_retries", maxRetries, "error", err)
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -450,7 +459,7 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 				return
 			}
 			if retry {
-				slog.Warn("Retrying due to rate limit", "attempt", attempts, "max_retries", maxRetries)
+				slog.Warn("Retrying due to rate limit", "attempt", attempts, "max_retries", maxRetries, "error", err)
 				select {
 				case <-ctx.Done():
 					// context cancelled
@@ -484,17 +493,23 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", maxRetries)
 	}
 
-	if apiErr.StatusCode == 401 {
+	if apiErr.StatusCode == http.StatusUnauthorized {
+		prev := a.providerOptions.apiKey
+		// in case the key comes from a script, we try to re-evaluate it.
 		a.providerOptions.apiKey, err = config.Get().Resolve(a.providerOptions.config.APIKey)
 		if err != nil {
 			return false, 0, fmt.Errorf("failed to resolve API key: %w", err)
+		}
+		// if it didn't change, do not retry.
+		if prev == a.providerOptions.apiKey {
+			return false, 0, err
 		}
 		a.client = createAnthropicClient(a.providerOptions, a.tp)
 		return true, 0, nil
 	}
 
 	// Handle context limit exceeded error (400 Bad Request)
-	if apiErr.StatusCode == 400 {
+	if apiErr.StatusCode == http.StatusBadRequest {
 		if adjusted, ok := a.handleContextLimitError(apiErr); ok {
 			a.adjustedMaxTokens = adjusted
 			slog.Debug("Adjusted max_tokens due to context limit", "new_max_tokens", adjusted)
@@ -503,7 +518,8 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 	}
 
 	isOverloaded := strings.Contains(apiErr.Error(), "overloaded") || strings.Contains(apiErr.Error(), "rate limit exceeded")
-	if apiErr.StatusCode != 429 && apiErr.StatusCode != 529 && !isOverloaded {
+	// 529 (unofficial): The service is overloaded
+	if apiErr.StatusCode != http.StatusTooManyRequests && apiErr.StatusCode != 529 && !isOverloaded {
 		return false, 0, err
 	}
 

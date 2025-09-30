@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
+
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/llm/tools"
 	"github.com/charmbracelet/crush/internal/message"
@@ -12,7 +13,7 @@ import (
 
 type EventType string
 
-const maxRetries = 8
+const maxRetries = 3
 
 const (
 	EventContentStart   EventType = "content_start"
@@ -97,7 +98,7 @@ func (p *baseProvider[C]) cleanMessages(messages []message.Message) (cleaned []m
 		}
 		cleaned = append(cleaned, msg)
 	}
-	return
+	return cleaned
 }
 
 func (p *baseProvider[C]) SendMessages(ctx context.Context, messages []message.Message, tools []tools.BaseTool) (*ProviderResponse, error) {
@@ -139,6 +140,8 @@ func WithMaxTokens(maxTokens int64) ProviderClientOption {
 }
 
 func NewProvider(cfg config.ProviderConfig, opts ...ProviderClientOption) (Provider, error) {
+	restore := config.PushPopCrushEnv()
+	defer restore()
 	resolvedAPIKey, err := config.Get().Resolve(cfg.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve API key for provider %s: %w", cfg.ID, err)

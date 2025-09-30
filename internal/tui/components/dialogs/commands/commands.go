@@ -60,16 +60,18 @@ type commandDialogCmp struct {
 }
 
 type (
-	SwitchSessionsMsg     struct{}
-	NewSessionsMsg        struct{}
-	SwitchModelMsg        struct{}
-	QuitMsg               struct{}
-	OpenFilePickerMsg     struct{}
-	ToggleHelpMsg         struct{}
-	ToggleCompactModeMsg  struct{}
-	ToggleThinkingMsg     struct{}
-	OpenExternalEditorMsg struct{}
-	CompactMsg            struct {
+	SwitchSessionsMsg      struct{}
+	NewSessionsMsg         struct{}
+	SwitchModelMsg         struct{}
+	QuitMsg                struct{}
+	OpenFilePickerMsg      struct{}
+	ToggleHelpMsg          struct{}
+	ToggleCompactModeMsg   struct{}
+	ToggleThinkingMsg      struct{}
+	OpenReasoningDialogMsg struct{}
+	OpenExternalEditorMsg  struct{}
+	ToggleYoloModeMsg      struct{}
+	CompactMsg             struct {
 		SessionID string
 	}
 )
@@ -119,7 +121,10 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		c.wWidth = msg.Width
 		c.wHeight = msg.Height
-		return c, c.commandList.SetSize(c.listWidth(), c.listHeight())
+		return c, tea.Batch(
+			c.SetCommandType(c.commandType),
+			c.commandList.SetSize(c.listWidth(), c.listHeight()),
+		)
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, c.keyMap.Select):
@@ -296,29 +301,43 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 		})
 	}
 
-	// Only show thinking toggle for Anthropic models that can reason
+	// Add reasoning toggle for models that support it
 	cfg := config.Get()
 	if agentCfg, ok := cfg.Agents["coder"]; ok {
 		providerCfg := cfg.GetProviderForModel(agentCfg.Model)
 		model := cfg.GetModelByType(agentCfg.Model)
-		if providerCfg != nil && model != nil &&
-			providerCfg.Type == catwalk.TypeAnthropic && model.CanReason {
+		if providerCfg != nil && model != nil && model.CanReason {
 			selectedModel := cfg.Models[agentCfg.Model]
-			status := "Enable"
-			if selectedModel.Think {
-				status = "Disable"
+
+			// Anthropic models: thinking toggle
+			if providerCfg.Type == catwalk.TypeAnthropic {
+				status := "Enable"
+				if selectedModel.Think {
+					status = "Disable"
+				}
+				commands = append(commands, Command{
+					ID:          "toggle_thinking",
+					Title:       status + " Thinking Mode",
+					Description: "Toggle model thinking for reasoning-capable models",
+					Handler: func(cmd Command) tea.Cmd {
+						return util.CmdHandler(ToggleThinkingMsg{})
+					},
+				})
 			}
-			commands = append(commands, Command{
-				ID:          "toggle_thinking",
-				Title:       status + " Thinking Mode",
-				Description: "Toggle model thinking for reasoning-capable models",
-				Handler: func(cmd Command) tea.Cmd {
-					return util.CmdHandler(ToggleThinkingMsg{})
-				},
-			})
+
+			// OpenAI models: reasoning effort dialog
+			if providerCfg.Type == catwalk.TypeOpenAI && model.HasReasoningEffort {
+				commands = append(commands, Command{
+					ID:          "select_reasoning_effort",
+					Title:       "Select Reasoning Effort",
+					Description: "Choose reasoning effort level (low/medium/high)",
+					Handler: func(cmd Command) tea.Cmd {
+						return util.CmdHandler(OpenReasoningDialogMsg{})
+					},
+				})
+			}
 		}
 	}
-
 	// Only show toggle compact mode command if window width is larger than compact breakpoint (90)
 	if c.wWidth > 120 && c.sessionID != "" {
 		commands = append(commands, Command{
@@ -360,6 +379,14 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 	}
 
 	return append(commands, []Command{
+		{
+			ID:          "toggle_yolo",
+			Title:       "Toggle Yolo Mode",
+			Description: "Toggle yolo mode",
+			Handler: func(cmd Command) tea.Cmd {
+				return util.CmdHandler(ToggleYoloModeMsg{})
+			},
+		},
 		{
 			ID:          "toggle_help",
 			Title:       "Toggle Help",

@@ -6,11 +6,14 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/event"
 	"github.com/charmbracelet/crush/internal/tui"
 	"github.com/charmbracelet/crush/internal/version"
 	"github.com/charmbracelet/fang"
@@ -20,12 +23,14 @@ import (
 
 func init() {
 	rootCmd.PersistentFlags().StringP("cwd", "c", "", "Current working directory")
+	rootCmd.PersistentFlags().StringP("data-dir", "D", "", "Custom crush data directory")
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Debug")
 
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
 
 	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(updateProvidersCmd)
 }
 
 var rootCmd = &cobra.Command{
@@ -44,6 +49,9 @@ crush -d
 # Run with debug logging in a specific directory
 crush -d -c /path/to/project
 
+# Run with custom data directory
+crush -D /path/to/custom/.crush
+
 # Print version
 crush -v
 
@@ -60,6 +68,8 @@ crush -y
 		}
 		defer app.Shutdown()
 
+		event.AppInitialized()
+
 		// Set up the TUI.
 		program := tea.NewProgram(
 			tui.New(app),
@@ -72,10 +82,14 @@ crush -y
 		go app.Subscribe(program)
 
 		if _, err := program.Run(); err != nil {
+			event.Error(err)
 			slog.Error("TUI run error", "error", err)
 			return fmt.Errorf("TUI error: %v", err)
 		}
 		return nil
+	},
+	PostRun: func(cmd *cobra.Command, args []string) {
+		event.AppExited()
 	},
 }
 
@@ -95,6 +109,7 @@ func Execute() {
 func setupApp(cmd *cobra.Command) (*app.App, error) {
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
+	dataDir, _ := cmd.Flags().GetString("data-dir")
 	ctx := cmd.Context()
 
 	cwd, err := ResolveCwd(cmd)
@@ -102,7 +117,7 @@ func setupApp(cmd *cobra.Command) (*app.App, error) {
 		return nil, err
 	}
 
-	cfg, err := config.Init(cwd, debug)
+	cfg, err := config.Init(cwd, dataDir, debug)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +126,10 @@ func setupApp(cmd *cobra.Command) (*app.App, error) {
 		cfg.Permissions = &config.Permissions{}
 	}
 	cfg.Permissions.SkipRequests = yolo
+
+	if err := createDotCrushDir(cfg.Options.DataDirectory); err != nil {
+		return nil, err
+	}
 
 	// Connect to DB; this will also run migrations.
 	conn, err := db.Connect(ctx, cfg.Options.DataDirectory)
@@ -124,7 +143,24 @@ func setupApp(cmd *cobra.Command) (*app.App, error) {
 		return nil, err
 	}
 
+	if shouldEnableMetrics() {
+		event.Init()
+	}
+
 	return appInstance, nil
+}
+
+func shouldEnableMetrics() bool {
+	if v, _ := strconv.ParseBool(os.Getenv("CRUSH_DISABLE_METRICS")); v {
+		return false
+	}
+	if v, _ := strconv.ParseBool(os.Getenv("DO_NOT_TRACK")); v {
+		return false
+	}
+	if config.Get().Options.DisableMetrics {
+		return false
+	}
+	return true
 }
 
 func MaybePrependStdin(prompt string) (string, error) {
@@ -159,4 +195,19 @@ func ResolveCwd(cmd *cobra.Command) (string, error) {
 		return "", fmt.Errorf("failed to get current working directory: %v", err)
 	}
 	return cwd, nil
+}
+
+func createDotCrushDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("failed to create data directory: %q %w", dir, err)
+	}
+
+	gitIgnorePath := filepath.Join(dir, ".gitignore")
+	if _, err := os.Stat(gitIgnorePath); os.IsNotExist(err) {
+		if err := os.WriteFile(gitIgnorePath, []byte("*\n"), 0o644); err != nil {
+			return fmt.Errorf("failed to create .gitignore file: %q %w", gitIgnorePath, err)
+		}
+	}
+
+	return nil
 }

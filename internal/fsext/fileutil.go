@@ -10,8 +10,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/charlievieth/fastwalk"
-
-	ignore "github.com/sabhiram/go-gitignore"
+	"github.com/charmbracelet/crush/internal/home"
 )
 
 type FileInfo struct {
@@ -57,63 +56,29 @@ func SkipHidden(path string) bool {
 }
 
 // FastGlobWalker provides gitignore-aware file walking with fastwalk
+// It uses hierarchical ignore checking like git does, checking .gitignore/.crushignore
+// files in each directory from the root to the target path.
 type FastGlobWalker struct {
-	gitignore   *ignore.GitIgnore
-	crushignore *ignore.GitIgnore
-	rootPath    string
+	directoryLister *directoryLister
 }
 
 func NewFastGlobWalker(searchPath string) *FastGlobWalker {
-	walker := &FastGlobWalker{
-		rootPath: searchPath,
+	return &FastGlobWalker{
+		directoryLister: NewDirectoryLister(searchPath),
 	}
-
-	// Load gitignore if it exists
-	gitignorePath := filepath.Join(searchPath, ".gitignore")
-	if _, err := os.Stat(gitignorePath); err == nil {
-		if gi, err := ignore.CompileIgnoreFile(gitignorePath); err == nil {
-			walker.gitignore = gi
-		}
-	}
-
-	// Load crushignore if it exists
-	crushignorePath := filepath.Join(searchPath, ".crushignore")
-	if _, err := os.Stat(crushignorePath); err == nil {
-		if ci, err := ignore.CompileIgnoreFile(crushignorePath); err == nil {
-			walker.crushignore = ci
-		}
-	}
-
-	return walker
 }
 
-// ShouldSkip checks if a path should be skipped based on gitignore, crushignore, and hidden file rules
+// ShouldSkip checks if a path should be skipped based on hierarchical gitignore,
+// crushignore, and hidden file rules
 func (w *FastGlobWalker) ShouldSkip(path string) bool {
-	if SkipHidden(path) {
-		return true
-	}
-
-	relPath, err := filepath.Rel(w.rootPath, path)
-	if err != nil {
-		return false
-	}
-
-	if w.gitignore != nil {
-		if w.gitignore.MatchesPath(relPath) {
-			return true
-		}
-	}
-
-	if w.crushignore != nil {
-		if w.crushignore.MatchesPath(relPath) {
-			return true
-		}
-	}
-
-	return false
+	return w.directoryLister.shouldIgnore(path, nil)
 }
 
 func GlobWithDoubleStar(pattern, searchPath string, limit int) ([]string, bool, error) {
+	// Normalize pattern to forward slashes on Windows so their config can use
+	// backslashes
+	pattern = filepath.ToSlash(pattern)
+
 	walker := NewFastGlobWalker(searchPath)
 	var matches []FileInfo
 	conf := fastwalk.Config{
@@ -131,19 +96,21 @@ func GlobWithDoubleStar(pattern, searchPath string, limit int) ([]string, bool, 
 			if walker.ShouldSkip(path) {
 				return filepath.SkipDir
 			}
-			return nil
 		}
 
 		if walker.ShouldSkip(path) {
 			return nil
 		}
 
-		// Check if path matches the pattern
 		relPath, err := filepath.Rel(searchPath, path)
 		if err != nil {
 			relPath = path
 		}
 
+		// Normalize separators to forward slashes
+		relPath = filepath.ToSlash(relPath)
+
+		// Check if path matches the pattern
 		matched, err := doublestar.Match(pattern, relPath)
 		if err != nil || !matched {
 			return nil
@@ -181,13 +148,45 @@ func GlobWithDoubleStar(pattern, searchPath string, limit int) ([]string, bool, 
 	return results, truncated, nil
 }
 
-func PrettyPath(path string) string {
-	// replace home directory with ~
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		path = strings.ReplaceAll(path, homeDir, "~")
+// ShouldExcludeFile checks if a file should be excluded from processing
+// based on common patterns and ignore rules
+func ShouldExcludeFile(rootPath, filePath string) bool {
+	return NewDirectoryLister(rootPath).
+		shouldIgnore(filePath, nil)
+}
+
+// WalkDirectories walks a directory tree and calls the provided function for each directory,
+// respecting hierarchical .gitignore/.crushignore files like git does.
+func WalkDirectories(rootPath string, fn func(path string, d os.DirEntry, err error) error) error {
+	dl := NewDirectoryLister(rootPath)
+
+	conf := fastwalk.Config{
+		Follow:  true,
+		ToSlash: fastwalk.DefaultToSlash(),
+		Sort:    fastwalk.SortDirsFirst,
 	}
-	return path
+
+	return fastwalk.Walk(&conf, rootPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return fn(path, d, err)
+		}
+
+		// Only process directories
+		if !d.IsDir() {
+			return nil
+		}
+
+		// Check if directory should be ignored
+		if dl.shouldIgnore(path, nil) {
+			return filepath.SkipDir
+		}
+
+		return fn(path, d, err)
+	})
+}
+
+func PrettyPath(path string) string {
+	return home.Short(path)
 }
 
 func DirTrim(pwd string, lim int) string {
@@ -232,4 +231,20 @@ func HasPrefix(path, prefix string) bool {
 	}
 	// If path is within prefix, Rel will not return a path starting with ".."
 	return !strings.HasPrefix(rel, "..")
+}
+
+// ToUnixLineEndings converts Windows line endings (CRLF) to Unix line endings (LF).
+func ToUnixLineEndings(content string) (string, bool) {
+	if strings.Contains(content, "\r\n") {
+		return strings.ReplaceAll(content, "\r\n", "\n"), true
+	}
+	return content, false
+}
+
+// ToWindowsLineEndings converts Unix line endings (LF) to Windows line endings (CRLF).
+func ToWindowsLineEndings(content string) (string, bool) {
+	if !strings.Contains(content, "\r\n") {
+		return strings.ReplaceAll(content, "\n", "\r\n"), true
+	}
+	return content, false
 }

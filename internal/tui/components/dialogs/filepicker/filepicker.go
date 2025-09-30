@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/components/dialogs"
@@ -21,9 +22,10 @@ import (
 )
 
 const (
-	MaxAttachmentSize  = int64(5 * 1024 * 1024) // 5MB
-	FilePickerID       = "filepicker"
-	fileSelectionHight = 10
+	MaxAttachmentSize   = int64(5 * 1024 * 1024) // 5MB
+	FilePickerID        = "filepicker"
+	fileSelectionHeight = 10
+	previewHeight       = 20
 )
 
 type FilePickedMsg struct {
@@ -59,7 +61,7 @@ func NewFilePickerCmp(workingDir string) FilePicker {
 		if cwd, err := os.Getwd(); err == nil {
 			fp.CurrentDirectory = cwd
 		} else {
-			fp.CurrentDirectory, _ = os.UserHomeDir()
+			fp.CurrentDirectory = home.Dir()
 		}
 	}
 
@@ -68,7 +70,7 @@ func NewFilePickerCmp(workingDir string) FilePicker {
 	fp.AutoHeight = false
 	fp.Styles = t.S().FilePicker
 	fp.Cursor = ""
-	fp.SetHeight(fileSelectionHight)
+	fp.SetHeight(fileSelectionHeight)
 
 	image := image.New(1, 1, "")
 
@@ -105,8 +107,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key.Matches(msg, m.filePicker.KeyMap.Back) {
 			// make sure we don't go back if we are at the home directory
-			homeDir, _ := os.UserHomeDir()
-			if m.filePicker.CurrentDirectory == homeDir {
+			if m.filePicker.CurrentDirectory == home.Dir() {
 				return m, nil
 			}
 		}
@@ -160,12 +161,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) View() string {
 	t := styles.CurrentTheme()
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
+	strs := []string{
 		t.S().Base.Padding(0, 1, 1, 1).Render(core.Title("Add Image", m.width-4)),
-		m.imagePreview(),
+	}
+
+	// hide image preview if the terminal is too small
+	if x, y := m.imagePreviewSize(); x > 0 && y > 0 {
+		strs = append(strs, m.imagePreview())
+	}
+
+	strs = append(
+		strs,
 		m.filePicker.View(),
 		t.S().Base.Width(m.width-2).PaddingLeft(1).AlignHorizontal(lipgloss.Left).Render(m.help.View(m.keyMap)),
+	)
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		strs...,
 	)
 	return m.style().Render(content)
 }
@@ -180,12 +193,15 @@ func (m *model) currentImage() string {
 }
 
 func (m *model) imagePreview() string {
+	const padding = 2
+
 	t := styles.CurrentTheme()
 	w, h := m.imagePreviewSize()
+
 	if m.currentImage() == "" {
 		imgPreview := t.S().Base.
-			Width(w).
-			Height(h).
+			Width(w - padding).
+			Height(h - padding).
 			Background(t.BgOverlay)
 
 		return m.imagePreviewStyle().Render(imgPreview.Render())
@@ -200,7 +216,10 @@ func (m *model) imagePreviewStyle() lipgloss.Style {
 }
 
 func (m *model) imagePreviewSize() (int, int) {
-	return m.width - 4, min(20, m.wHeight/2)
+	if m.wHeight-fileSelectionHeight-8 > previewHeight {
+		return m.width - 4, previewHeight
+	}
+	return 0, 0
 }
 
 func (m *model) style() lipgloss.Style {
@@ -218,7 +237,10 @@ func (m *model) ID() dialogs.DialogID {
 
 // Position implements FilePicker.
 func (m *model) Position() (int, int) {
-	row := m.wHeight/4 - 2 // just a bit above the center
+	_, imageHeight := m.imagePreviewSize()
+	dialogHeight := fileSelectionHeight + imageHeight + 4
+	row := (m.wHeight - dialogHeight) / 2
+
 	col := m.wWidth / 2
 	col -= m.width / 2
 	return row, col

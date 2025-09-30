@@ -15,12 +15,8 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-var (
-	// Pre-compiled regex for checking if a string contains alphabetic characters.
-	alphaRegex = regexp.MustCompile(`[a-zA-Z]`)
-	// Pre-compiled regex for checking if a string is alphanumeric.
-	alphanumericRegex = regexp.MustCompile(`^[a-zA-Z0-9]*$`)
-)
+// Pre-compiled regex for checking if a string is alphanumeric.
+var alphanumericRegex = regexp.MustCompile(`^[a-zA-Z0-9]*$`)
 
 type FilterableItem interface {
 	Item
@@ -246,7 +242,7 @@ func (f *filterableList[T]) Filter(query string) tea.Cmd {
 	}
 
 	f.selectedItem = ""
-	if query == "" {
+	if query == "" || len(f.items) == 0 {
 		return f.list.SetItems(f.items)
 	}
 

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"sync"
 	"time"
 
@@ -35,12 +34,7 @@ type App struct {
 
 	CoderAgent agent.Service
 
-	LSPClients map[string]*lsp.Client
-
-	clientsMutex sync.RWMutex
-
-	watcherCancelFuncs *csync.Slice[context.CancelFunc]
-	lspWatcherWG       sync.WaitGroup
+	LSPClients *csync.Map[string, *lsp.Client]
 
 	config *config.Config
 
@@ -51,7 +45,7 @@ type App struct {
 
 	// global context and cleanup functions
 	globalCtx    context.Context
-	cleanupFuncs []func()
+	cleanupFuncs []func() error
 }
 
 // New initializes a new applcation instance.
@@ -71,13 +65,11 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 		Messages:    messages,
 		History:     files,
 		Permissions: permission.NewPermissionService(cfg.WorkingDir(), skipPermissionsRequests, allowedTools),
-		LSPClients:  make(map[string]*lsp.Client),
+		LSPClients:  csync.NewMap[string, *lsp.Client](),
 
 		globalCtx: ctx,
 
 		config: cfg,
-
-		watcherCancelFuncs: csync.NewSlice[context.CancelFunc](),
 
 		events:          make(chan tea.Msg, 100),
 		serviceEventsWG: &sync.WaitGroup{},
@@ -91,6 +83,9 @@ func New(ctx context.Context, conn *sql.DB, cfg *config.Config) (*App, error) {
 
 	// Check for updates in the background.
 	go app.checkForUpdates(ctx)
+
+	// cleanup database upon app shutdown
+	app.cleanupFuncs = append(app.cleanupFuncs, conn.Close)
 
 	// TODO: remove the concept of agent config, most likely.
 	if cfg.IsConfigured() {
@@ -158,7 +153,7 @@ func (app *App) RunNonInteractive(ctx context.Context, prompt string, quiet bool
 	}
 
 	messageEvents := app.Messages.Subscribe(ctx)
-	readBts := 0
+	messageReadBytes := make(map[string]int)
 
 	for {
 		select {
@@ -174,11 +169,14 @@ func (app *App) RunNonInteractive(ctx context.Context, prompt string, quiet bool
 			}
 
 			msgContent := result.Message.Content().String()
+			readBts := messageReadBytes[result.Message.ID]
+
 			if len(msgContent) < readBts {
 				slog.Error("Non-interactive: message content is shorter than read bytes", "message_length", len(msgContent), "read_bytes", readBts)
 				return fmt.Errorf("message content is shorter than read bytes: %d < %d", len(msgContent), readBts)
 			}
 			fmt.Println(msgContent[readBts:])
+			messageReadBytes[result.Message.ID] = len(msgContent)
 
 			slog.Info("Non-interactive: run completed", "session_id", sess.ID)
 			return nil
@@ -187,9 +185,18 @@ func (app *App) RunNonInteractive(ctx context.Context, prompt string, quiet bool
 			msg := event.Payload
 			if msg.SessionID == sess.ID && msg.Role == message.Assistant && len(msg.Parts) > 0 {
 				stopSpinner()
-				part := msg.Content().String()[readBts:]
+
+				content := msg.Content().String()
+				readBytes := messageReadBytes[msg.ID]
+
+				if len(content) < readBytes {
+					slog.Error("Non-interactive: message content is shorter than read bytes", "message_length", len(content), "read_bytes", readBytes)
+					return fmt.Errorf("message content is shorter than read bytes: %d < %d", len(content), readBytes)
+				}
+
+				part := content[readBytes:]
 				fmt.Print(part)
-				readBts += len(part)
+				messageReadBytes[msg.ID] = len(content)
 			}
 
 		case <-ctx.Done():
@@ -211,9 +218,12 @@ func (app *App) setupEvents() {
 	setupSubscriber(ctx, app.serviceEventsWG, "permissions", app.Permissions.Subscribe, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "permissions-notifications", app.Permissions.SubscribeNotifications, app.events)
 	setupSubscriber(ctx, app.serviceEventsWG, "history", app.History.Subscribe, app.events)
-	cleanupFunc := func() {
+	setupSubscriber(ctx, app.serviceEventsWG, "mcp", agent.SubscribeMCPEvents, app.events)
+	setupSubscriber(ctx, app.serviceEventsWG, "lsp", SubscribeLSPEvents, app.events)
+	cleanupFunc := func() error {
 		cancel()
 		app.serviceEventsWG.Wait()
+		return nil
 	}
 	app.cleanupFuncs = append(app.cleanupFuncs, cleanupFunc)
 }
@@ -225,9 +235,7 @@ func setupSubscriber[T any](
 	subscriber func(context.Context) <-chan pubsub.Event[T],
 	outputCh chan<- tea.Msg,
 ) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		subCh := subscriber(ctx)
 		for {
 			select {
@@ -250,7 +258,7 @@ func setupSubscriber[T any](
 				return
 			}
 		}
-	}()
+	})
 }
 
 func (app *App) InitCoderAgent() error {
@@ -289,10 +297,11 @@ func (app *App) Subscribe(program *tea.Program) {
 
 	app.tuiWG.Add(1)
 	tuiCtx, tuiCancel := context.WithCancel(app.globalCtx)
-	app.cleanupFuncs = append(app.cleanupFuncs, func() {
+	app.cleanupFuncs = append(app.cleanupFuncs, func() error {
 		slog.Debug("Cancelling TUI message handler")
 		tuiCancel()
 		app.tuiWG.Wait()
+		return nil
 	})
 	defer app.tuiWG.Done()
 
@@ -317,23 +326,10 @@ func (app *App) Shutdown() {
 		app.CoderAgent.CancelAll()
 	}
 
-	for cancel := range app.watcherCancelFuncs.Seq() {
-		cancel()
-	}
-
-	// Wait for all LSP watchers to finish.
-	app.lspWatcherWG.Wait()
-
-	// Get all LSP clients.
-	app.clientsMutex.RLock()
-	clients := make(map[string]*lsp.Client, len(app.LSPClients))
-	maps.Copy(clients, app.LSPClients)
-	app.clientsMutex.RUnlock()
-
 	// Shutdown all LSP clients.
-	for name, client := range clients {
+	for name, client := range app.LSPClients.Seq2() {
 		shutdownCtx, cancel := context.WithTimeout(app.globalCtx, 5*time.Second)
-		if err := client.Shutdown(shutdownCtx); err != nil {
+		if err := client.Close(shutdownCtx); err != nil {
 			slog.Error("Failed to shutdown LSP client", "name", name, "error", err)
 		}
 		cancel()
@@ -342,7 +338,9 @@ func (app *App) Shutdown() {
 	// Call call cleanup functions.
 	for _, cleanup := range app.cleanupFuncs {
 		if cleanup != nil {
-			cleanup()
+			if err := cleanup(); err != nil {
+				slog.Error("Failed to cleanup app properly on shutdown", "error", err)
+			}
 		}
 	}
 }

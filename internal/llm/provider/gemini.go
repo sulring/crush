@@ -44,6 +44,14 @@ func createGeminiClient(opts providerClientOptions) (*genai.Client, error) {
 		APIKey:  opts.apiKey,
 		Backend: genai.BackendGeminiAPI,
 	}
+	if opts.baseURL != "" {
+		resolvedBaseURL, err := config.Get().Resolve(opts.baseURL)
+		if err == nil && resolvedBaseURL != "" {
+			cc.HTTPOptions = genai.HTTPOptions{
+				BaseURL: resolvedBaseURL,
+			}
+		}
+	}
 	if config.Get().Options.Debug {
 		cc.HTTPClient = log.NewHTTPClient()
 	}
@@ -62,15 +70,14 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 			var parts []*genai.Part
 			parts = append(parts, &genai.Part{Text: msg.Content().String()})
 			for _, binaryContent := range msg.BinaryContent() {
-				imageFormat := strings.Split(binaryContent.MIMEType, "/")
 				parts = append(parts, &genai.Part{InlineData: &genai.Blob{
-					MIMEType: imageFormat[1],
+					MIMEType: binaryContent.MIMEType,
 					Data:     binaryContent.Data,
 				}})
 			}
 			history = append(history, &genai.Content{
 				Parts: parts,
-				Role:  "user",
+				Role:  genai.RoleUser,
 			})
 		case message.Assistant:
 			var assistantParts []*genai.Part
@@ -81,6 +88,9 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 
 			if len(msg.ToolCalls()) > 0 {
 				for _, call := range msg.ToolCalls() {
+					if !call.Finished {
+						continue
+					}
 					args, _ := parseJSONToMap(call.Input)
 					assistantParts = append(assistantParts, &genai.Part{
 						FunctionCall: &genai.FunctionCall{
@@ -93,12 +103,13 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 
 			if len(assistantParts) > 0 {
 				history = append(history, &genai.Content{
-					Role:  "model",
+					Role:  genai.RoleModel,
 					Parts: assistantParts,
 				})
 			}
 
 		case message.Tool:
+			var toolParts []*genai.Part
 			for _, result := range msg.ToolResults() {
 				response := map[string]any{"result": result.Content}
 				parsed, err := parseJSONToMap(result.Content)
@@ -118,16 +129,17 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 					}
 				}
 
-				history = append(history, &genai.Content{
-					Parts: []*genai.Part{
-						{
-							FunctionResponse: &genai.FunctionResponse{
-								Name:     toolCall.Name,
-								Response: response,
-							},
-						},
+				toolParts = append(toolParts, &genai.Part{
+					FunctionResponse: &genai.FunctionResponse{
+						Name:     toolCall.Name,
+						Response: response,
 					},
-					Role: "function",
+				})
+			}
+			if len(toolParts) > 0 {
+				history = append(history, &genai.Content{
+					Parts: toolParts,
+					Role:  genai.RoleUser,
 				})
 			}
 		}
@@ -216,7 +228,7 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 				return nil, retryErr
 			}
 			if retry {
-				slog.Warn("Retrying due to rate limit", "attempt", attempts, "max_retries", maxRetries)
+				slog.Warn("Retrying due to rate limit", "attempt", attempts, "max_retries", maxRetries, "error", err)
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -319,6 +331,7 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 			for _, part := range lastMsg.Parts {
 				lastMsgParts = append(lastMsgParts, *part)
 			}
+
 			for resp, err := range chat.SendMessageStream(ctx, lastMsgParts...) {
 				if err != nil {
 					retry, after, retryErr := g.shouldRetry(attempts, err)
@@ -327,7 +340,7 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 						return
 					}
 					if retry {
-						slog.Warn("Retrying due to rate limit", "attempt", attempts, "max_retries", maxRetries)
+						slog.Warn("Retrying due to rate limit", "attempt", attempts, "max_retries", maxRetries, "error", err)
 						select {
 						case <-ctx.Done():
 							if ctx.Err() != nil {
@@ -336,7 +349,7 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 
 							return
 						case <-time.After(time.Duration(after) * time.Millisecond):
-							break
+							continue
 						}
 					} else {
 						eventChan <- ProviderEvent{Type: EventError, Error: err}
@@ -369,19 +382,12 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 								Finished: true,
 							}
 
-							isNew := true
-							for _, existing := range toolCalls {
-								if existing.Name == newCall.Name && existing.Input == newCall.Input {
-									isNew = false
-									break
-								}
-							}
-
-							if isNew {
-								toolCalls = append(toolCalls, newCall)
-							}
+							toolCalls = append(toolCalls, newCall)
 						}
 					}
+				} else {
+					// no content received
+					break
 				}
 			}
 
@@ -405,6 +411,11 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 					},
 				}
 				return
+			} else {
+				eventChan <- ProviderEvent{
+					Type:  EventError,
+					Error: errors.New("no content received"),
+				}
 			}
 		}
 	}()
@@ -429,9 +440,15 @@ func (g *geminiClient) shouldRetry(attempts int, err error) (bool, int64, error)
 
 	// Check for token expiration (401 Unauthorized)
 	if contains(errMsg, "unauthorized", "invalid api key", "api key expired") {
+		prev := g.providerOptions.apiKey
+		// in case the key comes from a script, we try to re-evaluate it.
 		g.providerOptions.apiKey, err = config.Get().Resolve(g.providerOptions.config.APIKey)
 		if err != nil {
 			return false, 0, fmt.Errorf("failed to resolve API key: %w", err)
+		}
+		// if it didn't change, do not retry.
+		if prev == g.providerOptions.apiKey {
+			return false, 0, err
 		}
 		g.client, err = createGeminiClient(g.providerOptions)
 		if err != nil {

@@ -3,10 +3,11 @@
 <p align="center">
     <a href="https://stuff.charm.sh/crush/charm-crush.png"><img width="450" alt="Charm Crush Logo" src="https://github.com/user-attachments/assets/adc1a6f4-b284-4603-836c-59038caa2e8b" /></a><br />
     <a href="https://github.com/charmbracelet/crush/releases"><img src="https://img.shields.io/github/release/charmbracelet/crush" alt="Latest Release"></a>
-    <a href="https://github.com/charmbracelet/crush/actions"><img src="https://github.com/charmbracelet/crush/workflows/build/badge.svg" alt="Build Status"></a>
+    <a href="https://github.com/charmbracelet/crush/actions"><img src="https://github.com/charmbracelet/crush/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
 </p>
 
 <p align="center">Your new coding bestie, now available in your favourite terminal.<br />Your tools, your code, and your workflows, wired into your LLM of choice.</p>
+<p align="center">你的新编程伙伴，现在就在你最爱的终端中。<br />你的工具、代码和工作流，都与您选择的 LLM 模型紧密相连。</p>
 
 <p align="center"><img width="800" alt="Crush Demo" src="https://github.com/user-attachments/assets/58280caf-851b-470a-b6f7-d5c4ea8a1968" /></p>
 
@@ -37,9 +38,20 @@ yay -S crush-bin
 nix run github:numtide/nix-ai-tools#crush
 ```
 
+Windows users:
+
+```bash
+# Winget
+winget install charmbracelet.crush
+
+# Scoop
+scoop bucket add charm https://github.com/charmbracelet/scoop-bucket.git
+scoop install crush
+```
+
 <details>
 <summary><strong>Nix (NUR)</strong></summary>
-    
+
 Crush is available via [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.crush`.
 
 You can also try out Crush via `nix-shell`:
@@ -51,6 +63,61 @@ nix-channel --update
 
 # Get Crush in a Nix shell.
 nix-shell -p '(import <nur> { pkgs = import <nixpkgs> {}; }).repos.charmbracelet.crush'
+```
+
+### NixOS & Home Manager Module Usage via NUR
+
+Crush provides NixOS and Home Manager modules via NUR.
+You can use these modules directly in your flake by importing them from NUR. Since it auto detects whether its a home manager or nixos context you can use the import the exact same way :)
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nur.url = "github:nix-community/NUR";
+  };
+
+  outputs = { self, nixpkgs, nur, ... }: {
+    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        nur.modules.nixos.default
+        nur.repos.charmbracelet.modules.crush
+        {
+          programs.crush = {
+            enable = true;
+            settings = {
+              providers = {
+                openai = {
+                  id = "openai";
+                  name = "OpenAI";
+                  base_url = "https://api.openai.com/v1";
+                  type = "openai";
+                  api_key = "sk-fake123456789abcdef...";
+                  models = [
+                    {
+                      id = "gpt-4";
+                      name = "GPT-4";
+                    }
+                  ];
+                };
+              };
+              lsp = {
+                go = { command = "gopls"; enabled = true; };
+                nix = { command = "nil"; enabled = true; };
+              };
+              options = {
+                context_paths = [ "/etc/nixos/configuration.nix" ];
+                tui = { compact_mode = true; };
+                debug = false;
+              };
+            };
+          };
+        }
+      ];
+    };
+  };
+}
 ```
 
 </details>
@@ -108,27 +175,31 @@ Crush. You'll be prompted to enter your API key.
 
 That said, you can also set environment variables for preferred providers.
 
-| Environment Variable       | Provider                                           |
-| -------------------------- | -------------------------------------------------- |
-| `ANTHROPIC_API_KEY`        | Anthropic                                          |
-| `OPENAI_API_KEY`           | OpenAI                                             |
-| `OPENROUTER_API_KEY`       | OpenRouter                                         |
-| `GEMINI_API_KEY`           | Google Gemini                                      |
-| `VERTEXAI_PROJECT`         | Google Cloud VertexAI (Gemini)                     |
-| `VERTEXAI_LOCATION`        | Google Cloud VertexAI (Gemini)                     |
-| `GROQ_API_KEY`             | Groq                                               |
-| `AWS_ACCESS_KEY_ID`        | AWS Bedrock (Claude)                               |
-| `AWS_SECRET_ACCESS_KEY`    | AWS Bedrock (Claude)                               |
-| `AWS_REGION`               | AWS Bedrock (Claude)                               |
-| `AZURE_OPENAI_ENDPOINT`    | Azure OpenAI models                                |
-| `AZURE_OPENAI_API_KEY`     | Azure OpenAI models (optional when using Entra ID) |
-| `AZURE_OPENAI_API_VERSION` | Azure OpenAI models                                |
+| Environment Variable        | Provider                                           |
+| --------------------------- | -------------------------------------------------- |
+| `ANTHROPIC_API_KEY`         | Anthropic                                          |
+| `OPENAI_API_KEY`            | OpenAI                                             |
+| `OPENROUTER_API_KEY`        | OpenRouter                                         |
+| `GEMINI_API_KEY`            | Google Gemini                                      |
+| `CEREBRAS_API_KEY`          | Cerebras                                           |
+| `HF_TOKEN`                  | Huggingface Inference                              |
+| `VERTEXAI_PROJECT`          | Google Cloud VertexAI (Gemini)                     |
+| `VERTEXAI_LOCATION`         | Google Cloud VertexAI (Gemini)                     |
+| `GROQ_API_KEY`              | Groq                                               |
+| `AWS_ACCESS_KEY_ID`         | AWS Bedrock (Claude)                               |
+| `AWS_SECRET_ACCESS_KEY`     | AWS Bedrock (Claude)                               |
+| `AWS_REGION`                | AWS Bedrock (Claude)                               |
+| `AWS_PROFILE`               | Custom AWS Profile                                 |
+| `AWS_REGION`                | AWS Region                                         |
+| `AZURE_OPENAI_API_ENDPOINT` | Azure OpenAI models                                |
+| `AZURE_OPENAI_API_KEY`      | Azure OpenAI models (optional when using Entra ID) |
+| `AZURE_OPENAI_API_VERSION`  | Azure OpenAI models                                |
 
 ### By the Way
 
 Is there a provider you’d like to see in Crush? Is there an existing model that needs an update?
 
-Crush’s default model listing is managed in [Catwalk](https://github.com/charmbracelet/catwalk), an community-supported, open source repository of Crush-compatible models, and you’re welcome to contribute.
+Crush’s default model listing is managed in [Catwalk](https://github.com/charmbracelet/catwalk), a community-supported, open source repository of Crush-compatible models, and you’re welcome to contribute.
 
 <a href="https://github.com/charmbracelet/catwalk"><img width="174" height="174" alt="Catwalk Badge" src="https://github.com/user-attachments/assets/95b49515-fe82-4409-b10d-5beb0873787d" /></a>
 
@@ -138,17 +209,27 @@ Crush runs great with no configuration. That said, if you do need or want to
 customize Crush, configuration can be added either local to the project itself,
 or globally, with the following priority:
 
-1. `./.crush.json`
-2. `./crush.json`
-3. `$HOME/.config/crush/crush.json`
+1. `.crush.json`
+2. `crush.json`
+3. `$HOME/.config/crush/crush.json` (Windows: `%USERPROFILE%\AppData\Local\crush\crush.json`)
 
 Configuration itself is stored as a JSON object:
 
 ```json
 {
-   "this-setting": { }
-   "that-setting": { }
+  "this-setting": { "this": "that" },
+  "that-setting": ["ceci", "cela"]
 }
+```
+
+As an additional note, Crush also stores ephemeral data, such as application state, in one additional location:
+
+```bash
+# Unix
+$HOME/.local/share/crush/crush.json
+
+# Windows
+%LOCALAPPDATA%\crush\crush.json
 ```
 
 ### LSPs
@@ -161,7 +242,10 @@ like you would. LSPs can be added manually like so:
   "$schema": "https://charm.land/crush.json",
   "lsp": {
     "go": {
-      "command": "gopls"
+      "command": "gopls",
+      "env": {
+        "GOTOOLCHAIN": "go1.24.5"
+      }
     },
     "typescript": {
       "command": "typescript-language-server",
@@ -189,6 +273,8 @@ using `$(echo $VAR)` syntax.
       "type": "stdio",
       "command": "node",
       "args": ["/path/to/mcp-server.js"],
+      "timeout": 120,
+      "disabled": false,
       "env": {
         "NODE_ENV": "production"
       }
@@ -196,6 +282,8 @@ using `$(echo $VAR)` syntax.
     "github": {
       "type": "http",
       "url": "https://example.com/mcp/",
+      "timeout": 120,
+      "disabled": false,
       "headers": {
         "Authorization": "$(echo Bearer $EXAMPLE_MCP_TOKEN)"
       }
@@ -203,6 +291,8 @@ using `$(echo $VAR)` syntax.
     "streaming-service": {
       "type": "sse",
       "url": "https://example.com/mcp/sse",
+      "timeout": 120,
+      "disabled": false,
       "headers": {
         "API-Key": "$(echo $API_KEY)"
       }
@@ -221,10 +311,10 @@ control but don't want Crush to consider when providing context.
 The `.crushignore` file uses the same syntax as `.gitignore` and can be placed
 in the root of your project or in subdirectories.
 
-### Whitelisting Tools
+### Allowing Tools
 
 By default, Crush will ask you for permission before running tool calls. If
-you'd like, you can whitelist tools to be executed without prompting you for
+you'd like, you can allow tools to be executed without prompting you for
 permissions. Use this with care.
 
 ```json
@@ -244,6 +334,74 @@ permissions. Use this with care.
 
 You can also skip all permission prompts entirely by running Crush with the
 `--yolo` flag. Be very, very careful with this feature.
+
+### Attribution Settings
+
+By default, Crush adds attribution information to Git commits and pull requests
+it creates. You can customize this behavior with the `attribution` option:
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "attribution": {
+      "co_authored_by": true,
+      "generated_with": true
+    }
+  }
+}
+```
+
+- `co_authored_by`: When true (default), adds `Co-Authored-By: Crush <crush@charm.land>` to commit messages
+- `generated_with`: When true (default), adds `💘 Generated with Crush` line to commit messages and PR descriptions
+
+### Local Models
+
+Local models can also be configured via OpenAI-compatible API. Here are two common examples:
+
+#### Ollama
+
+```json
+{
+  "providers": {
+    "ollama": {
+      "name": "Ollama",
+      "base_url": "http://localhost:11434/v1/",
+      "type": "openai",
+      "models": [
+        {
+          "name": "Qwen 3 30B",
+          "id": "qwen3:30b",
+          "context_window": 256000,
+          "default_max_tokens": 20000
+        }
+      ]
+    }
+  }
+}
+```
+
+#### LM Studio
+
+```json
+{
+  "providers": {
+    "lmstudio": {
+      "name": "LM Studio",
+      "base_url": "http://localhost:1234/v1/",
+      "type": "openai",
+      "models": [
+        {
+          "name": "Qwen 3 30B",
+          "id": "qwen/qwen3-30b-a3b-2507",
+          "context_window": 256000,
+          "default_max_tokens": 20000
+        }
+      ]
+    }
+  }
+}
+```
 
 ### Custom Providers
 
@@ -314,6 +472,48 @@ Custom Anthropic-compatible providers follow this format:
 }
 ```
 
+### Amazon Bedrock
+
+Crush currently supports running Anthropic models through Bedrock, with caching disabled.
+
+- A Bedrock provider will appear once you have AWS configured, i.e. `aws configure`
+- Crush also expects the `AWS_REGION` or `AWS_DEFAULT_REGION` to be set
+- To use a specific AWS profile set `AWS_PROFILE` in your environment, i.e. `AWS_PROFILE=myprofile crush`
+
+### Vertex AI Platform
+
+Vertex AI will appear in the list of available providers when `VERTEXAI_PROJECT` and `VERTEXAI_LOCATION` are set. You will also need to be authenticated:
+
+```bash
+gcloud auth application-default login
+```
+
+To add specific models to the configuration, configure as such:
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "providers": {
+    "vertexai": {
+      "models": [
+        {
+          "id": "claude-sonnet-4@20250514",
+          "name": "VertexAI Sonnet 4",
+          "cost_per_1m_in": 3,
+          "cost_per_1m_out": 15,
+          "cost_per_1m_in_cached": 3.75,
+          "cost_per_1m_out_cached": 0.3,
+          "context_window": 200000,
+          "default_max_tokens": 50000,
+          "can_reason": true,
+          "supports_attachments": true
+        }
+      ]
+    }
+  }
+}
+```
+
 ## Logging
 
 Sometimes you need to look at logs. Luckily, Crush logs all sorts of
@@ -345,6 +545,105 @@ config:
 }
 ```
 
+## Provider Auto-Updates
+
+By default, Crush automatically checks for the latest and greatest list of
+providers and models from [Catwalk](https://github.com/charmbracelet/catwalk),
+the open source Crush provider database. This means that when new providers and
+models are available, or when model metadata changes, Crush automatically
+updates your local configuration.
+
+### Disabling automatic provider updates
+
+For those with restricted internet access, or those who prefer to work in
+air-gapped environments, this might not be want you want, and this feature can
+be disabled.
+
+To disable automatic provider updates, set `disable_provider_auto_update` into
+your `crush.json` config:
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "disable_provider_auto_update": true
+  }
+}
+```
+
+Or set the `CRUSH_DISABLE_PROVIDER_AUTO_UPDATE` environment variable:
+
+```bash
+export CRUSH_DISABLE_PROVIDER_AUTO_UPDATE=1
+```
+
+### Manually updating providers
+
+Manually updating providers is possible with the `crush update-providers`
+command:
+
+```bash
+# Update providers remotely from Catwalk.
+crush update-providers
+
+# Update providers from a custom Catwalk base URL.
+crush update-providers https://example.com/
+
+# Update providers from a local file.
+crush update-providers /path/to/local-providers.json
+
+# Reset providers to the embedded version, embedded at crush at build time.
+crush update-providers embedded
+
+# For more info:
+crush update-providers --help
+```
+
+## Metrics
+
+Crush records pseudonymous usage metrics (tied to a device-specific hash),
+which maintainers rely on to inform development and support priorities. The
+metrics include solely usage metadata; prompts and responses are NEVER
+collected.
+
+Details on exactly what’s collected are in the source code ([here](https://github.com/charmbracelet/crush/tree/main/internal/event)
+and [here](https://github.com/charmbracelet/crush/blob/main/internal/llm/agent/event.go)).
+
+You can opt out of metrics collection at any time by setting the environment
+variable by setting the following in your environment:
+
+```bash
+export CRUSH_DISABLE_METRICS=1
+```
+
+Or by setting the following in your config:
+
+```json
+{
+  "options": {
+    "disable_metrics": true
+  }
+}
+```
+
+Crush also respects the [`DO_NOT_TRACK`](https://consoledonottrack.com)
+convention which can be enabled via `export DO_NOT_TRACK=1`.
+
+## A Note on Claude Max and GitHub Copilot
+
+Crush only supports model providers through official, compliant APIs. We do not
+support or endorse any methods that rely on personal Claude Max and GitHub
+Copilot accounts or OAuth workarounds, which violate Anthropic and
+Microsoft’s Terms of Service.
+
+We’re committed to building sustainable, trusted integrations with model
+providers. If you’re a provider interested in working with us,
+[reach out](mailto:vt100@charm.sh).
+
+## Contributing
+
+See the [contributing guide](https://github.com/charmbracelet/crush?tab=contributing-ov-file#contributing).
+
 ## Whatcha think?
 
 We’d love to hear your thoughts on this project. Need help? We gotchu. You can find us on:
@@ -353,12 +652,13 @@ We’d love to hear your thoughts on this project. Need help? We gotchu. You can
 - [Discord][discord]
 - [Slack](https://charm.land/slack)
 - [The Fediverse](https://mastodon.social/@charmcli)
+- [Bluesky](https://bsky.app/profile/charm.land)
 
 [discord]: https://charm.land/discord
 
 ## License
 
-[FSL-1.1-MIT](https://github.com/charmbracelet/crush/raw/main/LICENSE)
+[FSL-1.1-MIT](https://github.com/charmbracelet/crush/raw/main/LICENSE.md)
 
 ---
 

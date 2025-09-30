@@ -10,12 +10,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/env"
+	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/log"
+	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
 )
 
 const defaultCatwalkURL = "https://catwalk.charm.sh"
@@ -36,14 +40,9 @@ func LoadReader(fd io.Reader) (*Config, error) {
 }
 
 // Load loads the configuration from the default paths.
-func Load(workingDir string, debug bool) (*Config, error) {
-	// uses default config paths
-	configPaths := []string{
-		globalConfig(),
-		GlobalConfigData(),
-		filepath.Join(workingDir, fmt.Sprintf("%s.json", appName)),
-		filepath.Join(workingDir, fmt.Sprintf(".%s.json", appName)),
-	}
+func Load(workingDir, dataDir string, debug bool) (*Config, error) {
+	configPaths := lookupConfigs(workingDir)
+
 	cfg, err := loadFromConfigPaths(configPaths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config from paths %v: %w", configPaths, err)
@@ -51,7 +50,7 @@ func Load(workingDir string, debug bool) (*Config, error) {
 
 	cfg.dataConfigDir = GlobalConfigData()
 
-	cfg.setDefaults(workingDir)
+	cfg.setDefaults(workingDir, dataDir)
 
 	if debug {
 		cfg.Options.Debug = true
@@ -64,9 +63,9 @@ func Load(workingDir string, debug bool) (*Config, error) {
 	)
 
 	// Load known providers, this loads the config from catwalk
-	providers, err := Providers()
-	if err != nil || len(providers) == 0 {
-		return nil, fmt.Errorf("failed to load providers: %w", err)
+	providers, err := Providers(cfg)
+	if err != nil {
+		return nil, err
 	}
 	cfg.knownProviders = providers
 
@@ -74,7 +73,7 @@ func Load(workingDir string, debug bool) (*Config, error) {
 	// Configure providers
 	valueResolver := NewShellVariableResolver(env)
 	cfg.resolver = valueResolver
-	if err := cfg.configureProviders(env, valueResolver, providers); err != nil {
+	if err := cfg.configureProviders(env, valueResolver, cfg.knownProviders); err != nil {
 		return nil, fmt.Errorf("failed to configure providers: %w", err)
 	}
 
@@ -83,25 +82,50 @@ func Load(workingDir string, debug bool) (*Config, error) {
 		return cfg, nil
 	}
 
-	if err := cfg.configureSelectedModels(providers); err != nil {
+	if err := cfg.configureSelectedModels(cfg.knownProviders); err != nil {
 		return nil, fmt.Errorf("failed to configure selected models: %w", err)
 	}
 	cfg.SetupAgents()
 	return cfg, nil
 }
 
+func PushPopCrushEnv() func() {
+	found := []string{}
+	for _, ev := range os.Environ() {
+		if strings.HasPrefix(ev, "CRUSH_") {
+			pair := strings.SplitN(ev, "=", 2)
+			if len(pair) != 2 {
+				continue
+			}
+			found = append(found, strings.TrimPrefix(pair[0], "CRUSH_"))
+		}
+	}
+	backups := make(map[string]string)
+	for _, ev := range found {
+		backups[ev] = os.Getenv(ev)
+	}
+
+	for _, ev := range found {
+		os.Setenv(ev, os.Getenv("CRUSH_"+ev))
+	}
+
+	restore := func() {
+		for k, v := range backups {
+			os.Setenv(k, v)
+		}
+	}
+	return restore
+}
+
 func (c *Config) configureProviders(env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
 	knownProviderNames := make(map[string]bool)
+	restore := PushPopCrushEnv()
+	defer restore()
 	for _, p := range knownProviders {
 		knownProviderNames[string(p.ID)] = true
 		config, configExists := c.Providers.Get(string(p.ID))
 		// if the user configured a known provider we need to allow it to override a couple of parameters
 		if configExists {
-			if config.Disable {
-				slog.Debug("Skipping provider due to disable flag", "provider", p.ID)
-				c.Providers.Del(string(p.ID))
-				continue
-			}
 			if config.BaseURL != "" {
 				p.APIEndpoint = config.BaseURL
 			}
@@ -246,7 +270,7 @@ func (c *Config) configureProviders(env env.Env, resolver VariableResolver, know
 			c.Providers.Del(id)
 			continue
 		}
-		if providerConfig.Type != catwalk.TypeOpenAI && providerConfig.Type != catwalk.TypeAnthropic {
+		if providerConfig.Type != catwalk.TypeOpenAI && providerConfig.Type != catwalk.TypeAnthropic && providerConfig.Type != catwalk.TypeGemini {
 			slog.Warn("Skipping custom provider because the provider type is not supported", "provider", id, "type", providerConfig.Type)
 			c.Providers.Del(id)
 			continue
@@ -268,7 +292,7 @@ func (c *Config) configureProviders(env env.Env, resolver VariableResolver, know
 	return nil
 }
 
-func (c *Config) setDefaults(workingDir string) {
+func (c *Config) setDefaults(workingDir, dataDir string) {
 	c.workingDir = workingDir
 	if c.Options == nil {
 		c.Options = &Options{}
@@ -279,8 +303,14 @@ func (c *Config) setDefaults(workingDir string) {
 	if c.Options.ContextPaths == nil {
 		c.Options.ContextPaths = []string{}
 	}
-	if c.Options.DataDirectory == "" {
-		c.Options.DataDirectory = filepath.Join(workingDir, defaultDataDirectory)
+	if dataDir != "" {
+		c.Options.DataDirectory = dataDir
+	} else if c.Options.DataDirectory == "" {
+		if path, ok := fsext.LookupClosest(workingDir, defaultDataDirectory); ok {
+			c.Options.DataDirectory = path
+		} else {
+			c.Options.DataDirectory = filepath.Join(workingDir, defaultDataDirectory)
+		}
 	}
 	if c.Providers == nil {
 		c.Providers = csync.NewMap[string, ProviderConfig]()
@@ -295,16 +325,65 @@ func (c *Config) setDefaults(workingDir string) {
 		c.LSP = make(map[string]LSPConfig)
 	}
 
+	// Apply defaults to LSP configurations
+	c.applyLSPDefaults()
+
 	// Add the default context paths if they are not already present
 	c.Options.ContextPaths = append(defaultContextPaths, c.Options.ContextPaths...)
 	slices.Sort(c.Options.ContextPaths)
 	c.Options.ContextPaths = slices.Compact(c.Options.ContextPaths)
+
+	if str, ok := os.LookupEnv("CRUSH_DISABLE_PROVIDER_AUTO_UPDATE"); ok {
+		c.Options.DisableProviderAutoUpdate, _ = strconv.ParseBool(str)
+	}
+}
+
+// applyLSPDefaults applies default values from powernap to LSP configurations
+func (c *Config) applyLSPDefaults() {
+	// Get powernap's default configuration
+	configManager := powernapConfig.NewManager()
+	configManager.LoadDefaults()
+
+	// Apply defaults to each LSP configuration
+	for name, cfg := range c.LSP {
+		// Try to get defaults from powernap based on name or command name.
+		base, ok := configManager.GetServer(name)
+		if !ok {
+			base, ok = configManager.GetServer(cfg.Command)
+			if !ok {
+				continue
+			}
+		}
+		if cfg.Options == nil {
+			cfg.Options = base.Settings
+		}
+		if cfg.InitOptions == nil {
+			cfg.InitOptions = base.InitOptions
+		}
+		if len(cfg.FileTypes) == 0 {
+			cfg.FileTypes = base.FileTypes
+		}
+		if len(cfg.RootMarkers) == 0 {
+			cfg.RootMarkers = base.RootMarkers
+		}
+		if cfg.Command == "" {
+			cfg.Command = base.Command
+		}
+		if len(cfg.Args) == 0 {
+			cfg.Args = base.Args
+		}
+		if len(cfg.Env) == 0 {
+			cfg.Env = base.Environment
+		}
+		// Update the config in the map
+		c.LSP[name] = cfg
+	}
 }
 
 func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (largeModel SelectedModel, smallModel SelectedModel, err error) {
 	if len(knownProviders) == 0 && c.Providers.Len() == 0 {
 		err = fmt.Errorf("no providers configured, please configure at least one provider")
-		return
+		return largeModel, smallModel, err
 	}
 
 	// Use the first provider enabled based on the known providers order
@@ -317,7 +396,7 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 		defaultLargeModel := c.GetModel(string(p.ID), p.DefaultLargeModelID)
 		if defaultLargeModel == nil {
 			err = fmt.Errorf("default large model %s not found for provider %s", p.DefaultLargeModelID, p.ID)
-			return
+			return largeModel, smallModel, err
 		}
 		largeModel = SelectedModel{
 			Provider:        string(p.ID),
@@ -329,7 +408,7 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 		defaultSmallModel := c.GetModel(string(p.ID), p.DefaultSmallModelID)
 		if defaultSmallModel == nil {
 			err = fmt.Errorf("default small model %s not found for provider %s", p.DefaultSmallModelID, p.ID)
-			return
+			return largeModel, smallModel, err
 		}
 		smallModel = SelectedModel{
 			Provider:        string(p.ID),
@@ -337,7 +416,7 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 			MaxTokens:       defaultSmallModel.DefaultMaxTokens,
 			ReasoningEffort: defaultSmallModel.DefaultReasoningEffort,
 		}
-		return
+		return largeModel, smallModel, err
 	}
 
 	enabledProviders := c.EnabledProviders()
@@ -347,13 +426,13 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 
 	if len(enabledProviders) == 0 {
 		err = fmt.Errorf("no providers configured, please configure at least one provider")
-		return
+		return largeModel, smallModel, err
 	}
 
 	providerConfig := enabledProviders[0]
 	if len(providerConfig.Models) == 0 {
 		err = fmt.Errorf("provider %s has no models configured", providerConfig.ID)
-		return
+		return largeModel, smallModel, err
 	}
 	defaultLargeModel := c.GetModel(providerConfig.ID, providerConfig.Models[0].ID)
 	largeModel = SelectedModel{
@@ -367,7 +446,7 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 		Model:     defaultSmallModel.ID,
 		MaxTokens: defaultSmallModel.DefaultMaxTokens,
 	}
-	return
+	return largeModel, smallModel, err
 }
 
 func (c *Config) configureSelectedModels(knownProviders []catwalk.Provider) error {
@@ -437,6 +516,28 @@ func (c *Config) configureSelectedModels(knownProviders []catwalk.Provider) erro
 	return nil
 }
 
+// lookupConfigs searches config files recursively from CWD up to FS root
+func lookupConfigs(cwd string) []string {
+	// prepend default config paths
+	configPaths := []string{
+		globalConfig(),
+		GlobalConfigData(),
+	}
+
+	configNames := []string{appName + ".json", "." + appName + ".json"}
+
+	foundConfigs, err := fsext.Lookup(cwd, configNames...)
+	if err != nil {
+		// returns at least default configs
+		return configPaths
+	}
+
+	// reverse order so last config has more priority
+	slices.Reverse(foundConfigs)
+
+	return append(configPaths, foundConfigs...)
+}
+
 func loadFromConfigPaths(configPaths []string) (*Config, error) {
 	var configs []io.Reader
 
@@ -492,7 +593,6 @@ func hasAWSCredentials(env env.Env) bool {
 		env.Get("AWS_CONTAINER_CREDENTIALS_FULL_URI") != "" {
 		return true
 	}
-
 	return false
 }
 
@@ -513,7 +613,7 @@ func globalConfig() string {
 		return filepath.Join(localAppData, appName, fmt.Sprintf("%s.json", appName))
 	}
 
-	return filepath.Join(os.Getenv("HOME"), ".config", appName, fmt.Sprintf("%s.json", appName))
+	return filepath.Join(home.Dir(), ".config", appName, fmt.Sprintf("%s.json", appName))
 }
 
 // GlobalConfigData returns the path to the main data directory for the application.
@@ -535,16 +635,5 @@ func GlobalConfigData() string {
 		return filepath.Join(localAppData, appName, fmt.Sprintf("%s.json", appName))
 	}
 
-	return filepath.Join(os.Getenv("HOME"), ".local", "share", appName, fmt.Sprintf("%s.json", appName))
-}
-
-func HomeDir() string {
-	homeDir := os.Getenv("HOME")
-	if homeDir == "" {
-		homeDir = os.Getenv("USERPROFILE") // For Windows compatibility
-	}
-	if homeDir == "" {
-		homeDir = os.Getenv("HOMEPATH") // Fallback for some environments
-	}
-	return homeDir
+	return filepath.Join(home.Dir(), ".local", "share", appName, fmt.Sprintf("%s.json", appName))
 }
