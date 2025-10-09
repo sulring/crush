@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io/fs"
@@ -20,9 +21,8 @@ import (
 )
 
 const (
-	UserCommandPrefix    = "user:"
-	ProjectCommandPrefix = "project:"
-	MCPPromptPrefix      = "mcp:"
+	userCommandPrefix    = "user:"
+	projectCommandPrefix = "project:"
 )
 
 var namedArgPattern = regexp.MustCompile(`\$([A-Z][A-Z0-9_]*)`)
@@ -56,7 +56,7 @@ func buildCommandSources(cfg *config.Config) []commandSource {
 	if dir := getXDGCommandsDir(); dir != "" {
 		sources = append(sources, commandSource{
 			path:   dir,
-			prefix: UserCommandPrefix,
+			prefix: userCommandPrefix,
 		})
 	}
 
@@ -64,14 +64,14 @@ func buildCommandSources(cfg *config.Config) []commandSource {
 	if home := home.Dir(); home != "" {
 		sources = append(sources, commandSource{
 			path:   filepath.Join(home, ".crush", "commands"),
-			prefix: UserCommandPrefix,
+			prefix: userCommandPrefix,
 		})
 	}
 
 	// Project directory
 	sources = append(sources, commandSource{
 		path:   filepath.Join(cfg.Options.DataDirectory, "commands"),
-		prefix: ProjectCommandPrefix,
+		prefix: projectCommandPrefix,
 	})
 
 	return sources
@@ -133,12 +133,13 @@ func (l *commandLoader) loadCommand(path, baseDir, prefix string) (Command, erro
 	}
 
 	id := buildCommandID(path, baseDir, prefix)
+	desc := fmt.Sprintf("Custom command from %s", filepath.Base(path))
 
 	return Command{
 		ID:          id,
 		Title:       id,
-		Description: fmt.Sprintf("Custom command from %s", filepath.Base(path)),
-		Handler:     createCommandHandler(id, string(content)),
+		Description: desc,
+		Handler:     createCommandHandler(id, desc, string(content)),
 	}, nil
 }
 
@@ -155,15 +156,16 @@ func buildCommandID(path, baseDir, prefix string) string {
 	return prefix + strings.Join(parts, ":")
 }
 
-func createCommandHandler(id string, content string) func(Command) tea.Cmd {
+func createCommandHandler(id, desc, content string) func(Command) tea.Cmd {
 	return func(cmd Command) tea.Cmd {
 		args := extractArgNames(content)
 
 		if len(args) > 0 {
 			return util.CmdHandler(ShowArgumentsDialogMsg{
-				CommandID: id,
-				Content:   content,
-				ArgNames:  args,
+				CommandID:   id,
+				Description: desc,
+				Content:     content,
+				ArgNames:    args,
 			})
 		}
 
@@ -220,14 +222,9 @@ func LoadMCPPrompts() []Command {
 			continue
 		}
 		clientName, promptName := parts[0], parts[1]
-
-		displayName := promptName
-		if p.Title != "" {
-			displayName = p.Title
-		}
-
+		displayName := clientName + " " + cmp.Or(p.Title, promptName)
 		commands = append(commands, Command{
-			ID:          MCPPromptPrefix + key,
+			ID:          key,
 			Title:       displayName,
 			Description: fmt.Sprintf("[%s] %s", clientName, p.Description),
 			Handler:     createMCPPromptHandler(key, promptName, p),

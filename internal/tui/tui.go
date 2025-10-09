@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"github.com/charmbracelet/crush/internal/tui/styles"
 	"github.com/charmbracelet/crush/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 var lastMouseEvent time.Time
@@ -138,21 +140,80 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.dialog = u.(dialogs.DialogCmp)
 		return a, tea.Batch(completionCmd, dialogCmd)
 	case commands.ShowArgumentsDialogMsg:
+		var args []commands.Argument
+		for _, arg := range msg.ArgNames {
+			args = append(args, commands.Argument{Name: arg})
+		}
 		return a, util.CmdHandler(
 			dialogs.OpenDialogMsg{
 				Model: commands.NewCommandArgumentsDialog(
 					msg.CommandID,
-					msg.Content,
-					msg.ArgNames,
+					msg.CommandID,
+					msg.CommandID,
+					msg.Description,
+					args,
+					func(args map[string]string) tea.Cmd {
+						return func() tea.Msg {
+							content := msg.Content
+							for _, name := range msg.ArgNames {
+								value := args[name]
+								placeholder := "$" + name
+								content = strings.ReplaceAll(content, placeholder, value)
+							}
+							return commands.CommandRunCustomMsg{
+								Content: content,
+							}
+						}
+					},
 				),
 			},
 		)
 	case commands.ShowMCPPromptArgumentsDialogMsg:
-		dialog := commands.NewMCPPromptArgumentsDialog(msg.PromptID, msg.PromptName)
-		if dialog == nil {
+		prompt, ok := agent.GetMCPPrompt(msg.PromptID)
+		if !ok {
+			slog.Warn("prompt not found", "prompt_id", msg.PromptID, "prompt_name", msg.PromptName)
 			util.ReportWarn(fmt.Sprintf("Prompt %s not found", msg.PromptName))
 			return a, nil
 		}
+		args := make([]commands.Argument, 0, len(prompt.Arguments))
+		for _, arg := range prompt.Arguments {
+			args = append(args, commands.Argument(*arg))
+		}
+		dialog := commands.NewCommandArgumentsDialog(
+			msg.PromptID,
+			prompt.Title,
+			prompt.Name,
+			prompt.Description,
+			args,
+			func(args map[string]string) tea.Cmd {
+				return func() tea.Msg {
+					parts := strings.SplitN(msg.PromptID, ":", 2)
+					if len(parts) != 2 {
+						return util.ReportError(fmt.Errorf("invalid prompt ID: %s", msg.PromptID))
+					}
+					clientName := parts[0]
+
+					ctx := context.Background()
+					result, err := agent.GetMCPPromptContent(ctx, clientName, prompt.Name, args)
+					if err != nil {
+						return util.ReportError(err)
+					}
+
+					var content strings.Builder
+					for _, msg := range result.Messages {
+						if msg.Role == "user" {
+							if textContent, ok := msg.Content.(*mcp.TextContent); ok {
+								content.WriteString(textContent.Text)
+								content.WriteString("\n")
+							}
+						}
+					}
+					return cmpChat.SendMsg{
+						Text: content.String(),
+					}
+				}
+			},
+		)
 		return a, util.CmdHandler(
 			dialogs.OpenDialogMsg{
 				Model: dialog,
