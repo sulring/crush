@@ -276,7 +276,10 @@ func (f *filterableList[T]) Filter(query string) tea.Cmd {
 
 func (f *filterableList[T]) SetItems(items []T) tea.Cmd {
 	f.items = items
-	return f.list.SetItems(items)
+	return tea.Sequence(
+		f.list.SetItems(items),
+		f.Filter(f.query),
+	)
 }
 
 func (f *filterableList[T]) Cursor() *tea.Cursor {

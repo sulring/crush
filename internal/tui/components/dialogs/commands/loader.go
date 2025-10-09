@@ -223,7 +223,7 @@ type CommandRunCustomMsg struct {
 	Content string
 }
 
-func LoadMCPPrompts() []Command {
+func loadMCPPrompts() []Command {
 	prompts := agent.GetMCPPrompts()
 	commands := make([]Command, 0, len(prompts))
 
