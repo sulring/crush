@@ -1101,14 +1101,16 @@ func (a *agent) setupEvents(ctx context.Context) {
 					slog.Debug("MCPEvents subscription channel closed")
 					return
 				}
+				name := event.Payload.Name
+				c, ok := mcpClients.Get(name)
+				if !ok {
+					slog.Warn("MCP client not found for tools/prompts update", "name", name)
+					continue
+				}
+				prevState, _ := mcpStates.Get(name)
+				counts := prevState.Counts
 				switch event.Payload.Type {
 				case MCPEventPromptsListChanged:
-					name := event.Payload.Name
-					c, ok := mcpClients.Get(name)
-					if !ok {
-						slog.Warn("MCP client not found for tools/prompts update", "name", name)
-						continue
-					}
 					prompts, err := getPrompts(ctx, c)
 					if err != nil {
 						slog.Error("error listing prompts", "error", err)
@@ -1116,17 +1118,10 @@ func (a *agent) setupEvents(ctx context.Context) {
 						_ = c.Close()
 						continue
 					}
+					counts.Prompts = len(prompts)
 					updateMcpPrompts(name, prompts)
-					prevState, _ := mcpStates.Get(name)
-					prevState.Counts.Prompts = len(prompts)
-					updateMCPState(name, MCPStateConnected, nil, c, prevState.Counts)
+					updateMCPState(name, MCPStateConnected, nil, c, counts)
 				case MCPEventToolsListChanged:
-					name := event.Payload.Name
-					c, ok := mcpClients.Get(name)
-					if !ok {
-						slog.Warn("MCP client not found for tools/prompts update", "name", name)
-						continue
-					}
 					cfg := config.Get()
 					tools, err := getTools(ctx, name, a.permissions, c, cfg.WorkingDir())
 					if err != nil {
@@ -1135,11 +1130,10 @@ func (a *agent) setupEvents(ctx context.Context) {
 						_ = c.Close()
 						continue
 					}
+					counts.Tools = len(tools)
 					updateMcpTools(name, tools)
 					a.mcpTools.Reset(maps.Collect(mcpTools.Seq2()))
-					prevState, _ := mcpStates.Get(name)
-					prevState.Counts.Tools = len(tools)
-					updateMCPState(name, MCPStateConnected, nil, c, prevState.Counts)
+					updateMCPState(name, MCPStateConnected, nil, c, counts)
 				default:
 					continue
 				}
