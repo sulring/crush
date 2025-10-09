@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"io/fs"
@@ -216,17 +215,14 @@ func LoadMCPPrompts() []Command {
 
 	for key, prompt := range prompts {
 		p := prompt
-		// key format is "clientName:promptName"
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 {
+		clientName, promptName, ok := strings.Cut(key, ":")
+		if !ok {
 			continue
 		}
-		clientName, promptName := parts[0], parts[1]
-		displayName := clientName + " " + cmp.Or(p.Title, promptName)
 		commands = append(commands, Command{
 			ID:          key,
-			Title:       displayName,
-			Description: fmt.Sprintf("[%s] %s", clientName, p.Description),
+			Title:       clientName + ":" + promptName,
+			Description: p.Description,
 			Handler:     createMCPPromptHandler(key, promptName, p),
 		})
 	}

@@ -36,6 +36,8 @@ import (
 	"github.com/charmbracelet/crush/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var lastMouseEvent time.Time
@@ -142,7 +144,11 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commands.ShowArgumentsDialogMsg:
 		var args []commands.Argument
 		for _, arg := range msg.ArgNames {
-			args = append(args, commands.Argument{Name: arg})
+			args = append(args, commands.Argument{
+				Name:     arg,
+				Title:    cases.Title(language.English).String(arg),
+				Required: true,
+			})
 		}
 		return a, util.CmdHandler(
 			dialogs.OpenDialogMsg{
@@ -170,6 +176,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 	case commands.ShowMCPPromptArgumentsDialogMsg:
 		prompt, ok := agent.GetMCPPrompt(msg.PromptID)
+		clientName, _, ok := strings.Cut(msg.PromptID, ":")
 		if !ok {
 			slog.Warn("prompt not found", "prompt_id", msg.PromptID, "prompt_name", msg.PromptName)
 			util.ReportWarn(fmt.Sprintf("Prompt %s not found", msg.PromptName))
@@ -187,12 +194,6 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			args,
 			func(args map[string]string) tea.Cmd {
 				return func() tea.Msg {
-					parts := strings.SplitN(msg.PromptID, ":", 2)
-					if len(parts) != 2 {
-						return util.ReportError(fmt.Errorf("invalid prompt ID: %s", msg.PromptID))
-					}
-					clientName := parts[0]
-
 					ctx := context.Background()
 					result, err := agent.GetMCPPromptContent(ctx, clientName, prompt.Name, args)
 					if err != nil {
@@ -201,15 +202,18 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					var content strings.Builder
 					for _, msg := range result.Messages {
-						if msg.Role == "user" {
-							if textContent, ok := msg.Content.(*mcp.TextContent); ok {
-								content.WriteString(textContent.Text)
-								content.WriteString("\n")
-							}
+						if msg.Role != "user" {
+							continue
 						}
+						textContent, ok := msg.Content.(*mcp.TextContent)
+						if !ok {
+							continue
+						}
+						_, _ = content.WriteString(textContent.Text)
+						_, _ = content.WriteString("\n")
 					}
-					return cmpChat.SendMsg{
-						Text: content.String(),
+					return commands.CommandRunCustomMsg{
+						Content: content.String(),
 					}
 				}
 			},

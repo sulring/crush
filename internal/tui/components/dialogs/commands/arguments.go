@@ -71,7 +71,7 @@ func NewCommandArgumentsDialog(
 
 	for i, arg := range arguments {
 		ti := textinput.New()
-		ti.Placeholder = cmp.Or(arg.Description, "Enter value for "+arg.Name)
+		ti.Placeholder = cmp.Or(arg.Description, "Enter value for "+arg.Title)
 		ti.SetWidth(40)
 		ti.SetVirtualCursor(false)
 		ti.Prompt = ""
@@ -182,9 +182,10 @@ func (c *commandArgumentsDialogCmp) View() string {
 			labelStyle = labelStyle.Foreground(t.FgMuted)
 		}
 
-		argName := c.arguments[i].Name
-		if c.arguments[i].Required {
-			argName += " *"
+		arg := c.arguments[i]
+		argName := cmp.Or(arg.Title, arg.Name)
+		if arg.Required {
+			argName += "*"
 		}
 		label := labelStyle.Render(argName + ":")
 
