@@ -128,8 +128,8 @@ func runTool(ctx context.Context, name, toolName string, input string) (tools.To
 
 	output := make([]string, 0, len(result.Content))
 	for _, v := range result.Content {
-		if v, ok := v.(*mcp.TextContent); ok {
-			output = append(output, v.Text)
+		if vv, ok := v.(*mcp.TextContent); ok {
+			output = append(output, vv.Text)
 		} else {
 			output = append(output, fmt.Sprintf("%v", v))
 		}
@@ -250,14 +250,6 @@ func updateMCPState(name string, state MCPState, err error, client *mcp.ClientSe
 	})
 }
 
-// publishMCPEventToolsListChanged publishes a tool list changed event
-func publishMCPEventToolsListChanged(name string) {
-	mcpBroker.Publish(pubsub.UpdatedEvent, MCPEvent{
-		Type: MCPEventToolsListChanged,
-		Name: name,
-	})
-}
-
 // CloseMCPClients closes all MCP clients. This should be called during application shutdown.
 func CloseMCPClients() error {
 	var errs []error
@@ -343,7 +335,7 @@ func updateMcpTools(mcpName string, tools []tools.BaseTool) {
 }
 
 func createMCPSession(ctx context.Context, name string, m config.MCPConfig, resolver config.VariableResolver) (*mcp.ClientSession, error) {
-	transport, err := createMCPTransport(name, m, resolver)
+	transport, err := createMCPTransport(m, resolver)
 	if err != nil {
 		updateMCPState(name, MCPStateError, err, nil, 0)
 		slog.Error("error creating mcp client", "error", err, "name", name)
@@ -363,8 +355,6 @@ func createMCPSession(ctx context.Context, name string, m config.MCPConfig, reso
 		},
 	})
 
-	// XXX: ideally we should be able to use context.WithTimeout here, but,
-	// the SSE MCP client will start failing once that context is canceled.
 	timeout := mcpTimeout(m)
 	mcpCtx, cancel := context.WithCancel(ctx)
 	cancelTimer := time.AfterFunc(timeout, cancel)
@@ -390,7 +380,7 @@ func maybeTimeoutErr(err error, timeout time.Duration) error {
 	return err
 }
 
-func createMCPTransport(name string, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
+func createMCPTransport(m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
 	switch m.Type {
 	case config.MCPStdio:
 		command, err := resolver.ResolveValue(m.Command)
@@ -445,17 +435,6 @@ func (rt headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 		req.Header.Set(k, v)
 	}
 	return http.DefaultTransport.RoundTrip(req)
-}
-
-// for MCP's clients.
-type mcpLogger struct{ name string }
-
-func (l mcpLogger) Errorf(format string, v ...any) {
-	slog.Error(fmt.Sprintf(format, v...), "name", l.name)
-}
-
-func (l mcpLogger) Infof(format string, v ...any) {
-	slog.Info(fmt.Sprintf(format, v...), "name", l.name)
 }
 
 func mcpTimeout(m config.MCPConfig) time.Duration {
