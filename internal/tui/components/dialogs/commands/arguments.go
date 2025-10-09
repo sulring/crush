@@ -21,8 +21,8 @@ const (
 type ShowArgumentsDialogMsg struct {
 	CommandID   string
 	Description string
-	Content     string
 	ArgNames    []string
+	OnSubmit    func(args map[string]string) tea.Cmd
 }
 
 // CloseArgumentsDialogMsg is a message that is sent when the arguments dialog is closed.

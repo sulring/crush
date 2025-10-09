@@ -160,18 +160,31 @@ func createCommandHandler(id, desc, content string) func(Command) tea.Cmd {
 	return func(cmd Command) tea.Cmd {
 		args := extractArgNames(content)
 
-		if len(args) > 0 {
-			return util.CmdHandler(ShowArgumentsDialogMsg{
-				CommandID:   id,
-				Description: desc,
-				Content:     content,
-				ArgNames:    args,
+		if len(args) == 0 {
+			return util.CmdHandler(CommandRunCustomMsg{
+				Content: content,
 			})
 		}
-
-		return util.CmdHandler(CommandRunCustomMsg{
-			Content: content,
+		return util.CmdHandler(ShowArgumentsDialogMsg{
+			CommandID:   id,
+			Description: desc,
+			ArgNames:    args,
+			OnSubmit: func(args map[string]string) tea.Cmd {
+				return execUserPrompt(content, args)
+			},
 		})
+	}
+}
+
+func execUserPrompt(content string, args map[string]string) tea.Cmd {
+	return func() tea.Msg {
+		for name, value := range args {
+			placeholder := "$" + name
+			content = strings.ReplaceAll(content, placeholder, value)
+		}
+		return CommandRunCustomMsg{
+			Content: content,
+		}
 	}
 }
 

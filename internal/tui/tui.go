@@ -156,19 +156,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msg.CommandID,
 					msg.Description,
 					args,
-					func(args map[string]string) tea.Cmd {
-						return func() tea.Msg {
-							content := msg.Content
-							for _, name := range msg.ArgNames {
-								value := args[name]
-								placeholder := "$" + name
-								content = strings.ReplaceAll(content, placeholder, value)
-							}
-							return commands.CommandRunCustomMsg{
-								Content: content,
-							}
-						}
-					},
+					msg.OnSubmit,
 				),
 			},
 		)
