@@ -336,13 +336,11 @@ func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *con
 			updateMcpTools(name, tools)
 			updateMcpPrompts(name, prompts)
 			mcpClients.Set(name, c)
-			updateMCPState(
-				name, MCPStateConnected, nil, c,
-				MCPCounts{
-					Tools:   len(tools),
-					Prompts: len(prompts),
-				},
-			)
+			counts := MCPCounts{
+				Tools:   len(tools),
+				Prompts: len(prompts),
+			}
+			updateMCPState(name, MCPStateConnected, nil, c, counts)
 		}(name, m)
 	}
 	wg.Wait()

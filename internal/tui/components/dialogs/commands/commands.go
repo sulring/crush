@@ -29,8 +29,12 @@ const (
 	defaultWidth int = 70
 )
 
+type CommandType uint
+
+func (c CommandType) String() string { return []string{"System", "User", "MCP"}[c] }
+
 const (
-	SystemCommands int = iota
+	SystemCommands CommandType = iota
 	UserCommands
 	MCPPrompts
 )
@@ -59,10 +63,10 @@ type commandDialogCmp struct {
 	commandList  listModel
 	keyMap       CommandsDialogKeyMap
 	help         help.Model
-	commandType  int       // SystemCommands, UserCommands, or MCPPrompts
-	userCommands []Command // User-defined commands
-	mcpPrompts   []Command // MCP prompts
-	sessionID    string    // Current session ID
+	selected     CommandType // Selected SystemCommands, UserCommands, or MCPPrompts
+	userCommands []Command   // User-defined commands
+	mcpPrompts   []Command   // MCP prompts
+	sessionID    string      // Current session ID
 	ctx          context.Context
 	cancel       context.CancelFunc
 }
@@ -110,7 +114,7 @@ func NewCommandDialog(sessionID string) CommandsDialog {
 		width:       defaultWidth,
 		keyMap:      DefaultCommandsDialogKeyMap(),
 		help:        help,
-		commandType: SystemCommands,
+		selected:    SystemCommands,
 		sessionID:   sessionID,
 	}
 }
@@ -126,7 +130,7 @@ func (c *commandDialogCmp) Init() tea.Cmd {
 	// Subscribe to MCP events
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	return tea.Batch(
-		c.SetCommandType(c.commandType),
+		c.SetCommandType(c.selected),
 		c.subscribeMCPEvents(),
 	)
 }
@@ -149,7 +153,7 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		c.wWidth = msg.Width
 		c.wHeight = msg.Height
 		return c, tea.Batch(
-			c.SetCommandType(c.commandType),
+			c.SetCommandType(c.selected),
 			c.commandList.SetSize(c.listWidth(), c.listHeight()),
 		)
 	case pubsub.Event[agent.MCPEvent]:
@@ -157,7 +161,7 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == pubsub.UpdatedEvent {
 			c.mcpPrompts = LoadMCPPrompts()
 			// If we're currently viewing MCP prompts, refresh the list
-			if c.commandType == MCPPrompts {
+			if c.selected == MCPPrompts {
 				return c, tea.Batch(
 					c.SetCommandType(MCPPrompts),
 					c.subscribeMCPEvents(),
@@ -184,23 +188,23 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(c.userCommands) == 0 && len(c.mcpPrompts) == 0 {
 				return c, nil
 			}
-			// Cycle through command types: System -> User -> MCP -> System
-			nextType := (c.commandType + 1) % 3
-			// Skip empty types
-			for {
-				if nextType == UserCommands && len(c.userCommands) == 0 {
-					nextType = (nextType + 1) % 3
-				} else if nextType == MCPPrompts && len(c.mcpPrompts) == 0 {
-					nextType = (nextType + 1) % 3
-				} else {
-					break
+			switch c.selected {
+			case SystemCommands:
+				if len(c.userCommands) > 0 {
+					return c, c.SetCommandType(UserCommands)
 				}
-				// Prevent infinite loop
-				if nextType == c.commandType {
-					return c, nil
+				if len(c.mcpPrompts) > 0 {
+					return c, c.SetCommandType(MCPPrompts)
 				}
+				return c, nil
+			case UserCommands:
+				if len(c.mcpPrompts) > 0 {
+					return c, c.SetCommandType(MCPPrompts)
+				}
+				return c, c.SetCommandType(SystemCommands)
+			case MCPPrompts:
+				return c, c.SetCommandType(SystemCommands)
 			}
-			return c, c.SetCommandType(nextType)
 		case key.Matches(msg, c.keyMap.Close):
 			if c.cancel != nil {
 				c.cancel()
@@ -247,17 +251,24 @@ func (c *commandDialogCmp) Cursor() *tea.Cursor {
 
 func (c *commandDialogCmp) commandTypeRadio() string {
 	t := styles.CurrentTheme()
-	choices := []string{"System", "User", "MCP"}
-	iconSelected := "◉"
-	iconUnselected := "○"
 
-	icons := make([]string, 3)
-	for i := range icons {
-		if i == c.commandType {
-			icons[i] = iconSelected
-		} else {
-			icons[i] = iconUnselected
+	selected := func(i CommandType) string {
+		if i == c.selected {
+			return "◉"
 		}
+		return "○"
+	}
+
+	choices := []string{SystemCommands.String()}
+	icons := []string{selected(SystemCommands)}
+
+	if len(c.userCommands) > 0 {
+		choices = append(choices, UserCommands.String())
+		icons = append(icons, selected(UserCommands))
+	}
+	if len(c.mcpPrompts) > 0 {
+		choices = append(choices, MCPPrompts.String())
+		icons = append(icons, selected(MCPPrompts))
 	}
 
 	parts := make([]string, 0, 6)
@@ -272,11 +283,11 @@ func (c *commandDialogCmp) listWidth() int {
 	return defaultWidth - 2 // 4 for padding
 }
 
-func (c *commandDialogCmp) SetCommandType(commandType int) tea.Cmd {
-	c.commandType = commandType
+func (c *commandDialogCmp) SetCommandType(commandType CommandType) tea.Cmd {
+	c.selected = commandType
 
 	var commands []Command
-	switch c.commandType {
+	switch c.selected {
 	case SystemCommands:
 		commands = c.defaultCommands()
 	case UserCommands:
