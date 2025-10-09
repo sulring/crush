@@ -342,18 +342,22 @@ func createMCPSession(ctx context.Context, name string, m config.MCPConfig, reso
 		return nil, err
 	}
 
-	client := mcp.NewClient(&mcp.Implementation{
-		Name:    "crush",
-		Version: version.Version,
-		Title:   "Crush",
-	}, &mcp.ClientOptions{
-		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
-			mcpBroker.Publish(pubsub.UpdatedEvent, MCPEvent{
-				Type: MCPEventToolsListChanged,
-				Name: name,
-			})
+	client := mcp.NewClient(
+		&mcp.Implementation{
+			Name:    "crush",
+			Version: version.Version,
+			Title:   "Crush",
 		},
-	})
+		&mcp.ClientOptions{
+			ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
+				mcpBroker.Publish(pubsub.UpdatedEvent, MCPEvent{
+					Type: MCPEventToolsListChanged,
+					Name: name,
+				})
+			},
+			KeepAlive: time.Minute * 10,
+		},
+	)
 
 	timeout := mcpTimeout(m)
 	mcpCtx, cancel := context.WithCancel(ctx)
