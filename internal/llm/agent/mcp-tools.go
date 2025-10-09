@@ -355,7 +355,11 @@ func updateMcpTools(mcpName string, tools []tools.BaseTool) {
 }
 
 func createMCPSession(ctx context.Context, name string, m config.MCPConfig, resolver config.VariableResolver) (*mcp.ClientSession, error) {
-	transport, err := createMCPTransport(m, resolver)
+	timeout := mcpTimeout(m)
+	mcpCtx, cancel := context.WithCancel(ctx)
+	cancelTimer := time.AfterFunc(timeout, cancel)
+
+	transport, err := createMCPTransport(mcpCtx, m, resolver)
 	if err != nil {
 		updateMCPState(name, MCPStateError, err, nil, 0, 0)
 		slog.Error("error creating mcp client", "error", err, "name", name)
@@ -385,10 +389,6 @@ func createMCPSession(ctx context.Context, name string, m config.MCPConfig, reso
 		},
 	)
 
-	timeout := mcpTimeout(m)
-	mcpCtx, cancel := context.WithCancel(ctx)
-	cancelTimer := time.AfterFunc(timeout, cancel)
-
 	session, err := client.Connect(mcpCtx, transport, nil)
 	if err != nil {
 		updateMCPState(name, MCPStateError, maybeTimeoutErr(err, timeout), nil, 0, 0)
@@ -410,7 +410,7 @@ func maybeTimeoutErr(err error, timeout time.Duration) error {
 	return err
 }
 
-func createMCPTransport(m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
+func createMCPTransport(ctx context.Context, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
 	switch m.Type {
 	case config.MCPStdio:
 		command, err := resolver.ResolveValue(m.Command)
@@ -420,7 +420,7 @@ func createMCPTransport(m config.MCPConfig, resolver config.VariableResolver) (m
 		if strings.TrimSpace(command) == "" {
 			return nil, fmt.Errorf("mcp stdio config requires a non-empty 'command' field")
 		}
-		cmd := exec.Command(home.Long(command), m.Args...)
+		cmd := exec.CommandContext(ctx, home.Long(command), m.Args...)
 		cmd.Env = m.ResolvedEnv()
 		return &mcp.CommandTransport{
 			Command: cmd,
