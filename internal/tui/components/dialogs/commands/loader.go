@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -214,45 +215,40 @@ func LoadMCPPrompts() []Command {
 	commands := make([]Command, 0, len(prompts))
 
 	for key, prompt := range prompts {
-		p := prompt
 		clientName, promptName, ok := strings.Cut(key, ":")
 		if !ok {
+			slog.Warn("prompt not found", "key", key)
 			continue
 		}
 		commands = append(commands, Command{
 			ID:          key,
 			Title:       clientName + ":" + promptName,
-			Description: p.Description,
-			Handler:     createMCPPromptHandler(key, promptName, p),
+			Description: prompt.Description,
+			Handler:     createMCPPromptHandler(clientName, promptName, prompt),
 		})
 	}
 
 	return commands
 }
 
-func createMCPPromptHandler(key, promptName string, prompt *mcp.Prompt) func(Command) tea.Cmd {
+func createMCPPromptHandler(clientName, promptName string, prompt *mcp.Prompt) func(Command) tea.Cmd {
 	return func(cmd Command) tea.Cmd {
 		if len(prompt.Arguments) == 0 {
-			return executeMCPPromptWithoutArgs(key, promptName)
+			return execMCPPrompt(clientName, promptName, nil)
 		}
 		return util.CmdHandler(ShowMCPPromptArgumentsDialogMsg{
-			PromptID:   cmd.ID,
-			PromptName: promptName,
+			Prompt: prompt,
+			OnSubmit: func(args map[string]string) tea.Cmd {
+				return execMCPPrompt(clientName, promptName, args)
+			},
 		})
 	}
 }
 
-func executeMCPPromptWithoutArgs(key, promptName string) tea.Cmd {
+func execMCPPrompt(clientName, promptName string, args map[string]string) tea.Cmd {
 	return func() tea.Msg {
-		// key format is "clientName:promptName"
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 {
-			return util.ReportError(fmt.Errorf("invalid prompt key: %s", key))
-		}
-		clientName := parts[0]
-
 		ctx := context.Background()
-		result, err := agent.GetMCPPromptContent(ctx, clientName, promptName, nil)
+		result, err := agent.GetMCPPromptContent(ctx, clientName, promptName, args)
 		if err != nil {
 			return util.ReportError(err)
 		}
@@ -274,6 +270,6 @@ func executeMCPPromptWithoutArgs(key, promptName string) tea.Cmd {
 }
 
 type ShowMCPPromptArgumentsDialogMsg struct {
-	PromptID   string
-	PromptName string
+	Prompt   *mcp.Prompt
+	OnSubmit func(arg map[string]string) tea.Cmd
 }

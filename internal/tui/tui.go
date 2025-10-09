@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/rand"
 	"strings"
 	"time"
@@ -35,7 +34,6 @@ import (
 	"github.com/charmbracelet/crush/internal/tui/styles"
 	"github.com/charmbracelet/crush/internal/tui/util"
 	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -175,48 +173,17 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			},
 		)
 	case commands.ShowMCPPromptArgumentsDialogMsg:
-		prompt, ok := agent.GetMCPPrompt(msg.PromptID)
-		clientName, _, ok := strings.Cut(msg.PromptID, ":")
-		if !ok {
-			slog.Warn("prompt not found", "prompt_id", msg.PromptID, "prompt_name", msg.PromptName)
-			util.ReportWarn(fmt.Sprintf("Prompt %s not found", msg.PromptName))
-			return a, nil
-		}
-		args := make([]commands.Argument, 0, len(prompt.Arguments))
-		for _, arg := range prompt.Arguments {
+		args := make([]commands.Argument, 0, len(msg.Prompt.Arguments))
+		for _, arg := range msg.Prompt.Arguments {
 			args = append(args, commands.Argument(*arg))
 		}
 		dialog := commands.NewCommandArgumentsDialog(
-			msg.PromptID,
-			prompt.Title,
-			prompt.Name,
-			prompt.Description,
+			msg.Prompt.Name,
+			msg.Prompt.Title,
+			msg.Prompt.Name,
+			msg.Prompt.Description,
 			args,
-			func(args map[string]string) tea.Cmd {
-				return func() tea.Msg {
-					ctx := context.Background()
-					result, err := agent.GetMCPPromptContent(ctx, clientName, prompt.Name, args)
-					if err != nil {
-						return util.ReportError(err)
-					}
-
-					var content strings.Builder
-					for _, msg := range result.Messages {
-						if msg.Role != "user" {
-							continue
-						}
-						textContent, ok := msg.Content.(*mcp.TextContent)
-						if !ok {
-							continue
-						}
-						_, _ = content.WriteString(textContent.Text)
-						_, _ = content.WriteString("\n")
-					}
-					return commands.CommandRunCustomMsg{
-						Content: content.String(),
-					}
-				}
-			},
+			msg.OnSubmit,
 		)
 		return a, util.CmdHandler(
 			dialogs.OpenDialogMsg{
