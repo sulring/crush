@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -9,14 +10,19 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/llm/agent"
+	"github.com/charmbracelet/crush/internal/tui/components/chat"
 	"github.com/charmbracelet/crush/internal/tui/util"
 )
 
 const (
 	UserCommandPrefix    = "user:"
 	ProjectCommandPrefix = "project:"
+	MCPPromptPrefix      = "mcp:"
 )
 
 var namedArgPattern = regexp.MustCompile(`\$([A-Z][A-Z0-9_]*)`)
@@ -200,4 +206,81 @@ func isMarkdownFile(name string) bool {
 
 type CommandRunCustomMsg struct {
 	Content string
+}
+
+func LoadMCPPrompts() []Command {
+	prompts := agent.GetMCPPrompts()
+	commands := make([]Command, 0, len(prompts))
+
+	for key, prompt := range prompts {
+		p := prompt
+		// key format is "clientName:promptName"
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		clientName, promptName := parts[0], parts[1]
+
+		displayName := promptName
+		if p.Title != "" {
+			displayName = p.Title
+		}
+
+		commands = append(commands, Command{
+			ID:          MCPPromptPrefix + key,
+			Title:       displayName,
+			Description: fmt.Sprintf("[%s] %s", clientName, p.Description),
+			Handler:     createMCPPromptHandler(key, promptName, p),
+		})
+	}
+
+	return commands
+}
+
+func createMCPPromptHandler(key, promptName string, prompt *mcp.Prompt) func(Command) tea.Cmd {
+	return func(cmd Command) tea.Cmd {
+		if len(prompt.Arguments) == 0 {
+			return executeMCPPromptWithoutArgs(key, promptName)
+		}
+		return util.CmdHandler(ShowMCPPromptArgumentsDialogMsg{
+			PromptID:   cmd.ID,
+			PromptName: promptName,
+		})
+	}
+}
+
+func executeMCPPromptWithoutArgs(key, promptName string) tea.Cmd {
+	return func() tea.Msg {
+		// key format is "clientName:promptName"
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) != 2 {
+			return util.ReportError(fmt.Errorf("invalid prompt key: %s", key))
+		}
+		clientName := parts[0]
+
+		ctx := context.Background()
+		result, err := agent.GetMCPPromptContent(ctx, clientName, promptName, nil)
+		if err != nil {
+			return util.ReportError(err)
+		}
+
+		var content strings.Builder
+		for _, msg := range result.Messages {
+			if msg.Role == "user" {
+				if textContent, ok := msg.Content.(*mcp.TextContent); ok {
+					content.WriteString(textContent.Text)
+					content.WriteString("\n")
+				}
+			}
+		}
+
+		return chat.SendMsg{
+			Text: content.String(),
+		}
+	}
+}
+
+type ShowMCPPromptArgumentsDialogMsg struct {
+	PromptID   string
+	PromptName string
 }

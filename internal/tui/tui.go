@@ -147,6 +147,17 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				),
 			},
 		)
+	case commands.ShowMCPPromptArgumentsDialogMsg:
+		dialog := commands.NewMCPPromptArgumentsDialog(msg.PromptID, msg.PromptName)
+		if dialog == nil {
+			util.ReportWarn(fmt.Sprintf("Prompt %s not found", msg.PromptName))
+			return a, nil
+		}
+		return a, util.CmdHandler(
+			dialogs.OpenDialogMsg{
+				Model: dialog,
+			},
+		)
 	// Page change messages
 	case page.PageChangeMsg:
 		return a, a.moveToPage(msg.ID)

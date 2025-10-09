@@ -1102,24 +1102,32 @@ func (a *agent) setupEvents(ctx context.Context) {
 					return
 				}
 				switch event.Payload.Type {
-				case MCPEventToolsListChanged:
+				case MCPEventToolsListChanged, MCPEventPromptsListChanged:
 					name := event.Payload.Name
 					c, ok := mcpClients.Get(name)
 					if !ok {
-						slog.Warn("MCP client not found for tools update", "name", name)
+						slog.Warn("MCP client not found for tools/prompts update", "name", name)
 						continue
 					}
 					cfg := config.Get()
 					tools, err := getTools(ctx, name, a.permissions, c, cfg.WorkingDir())
 					if err != nil {
 						slog.Error("error listing tools", "error", err)
-						updateMCPState(name, MCPStateError, err, nil, 0)
+						updateMCPState(name, MCPStateError, err, nil, 0, 0)
+						_ = c.Close()
+						continue
+					}
+					prompts, err := getPrompts(ctx, c)
+					if err != nil {
+						slog.Error("error listing prompts", "error", err)
+						updateMCPState(name, MCPStateError, err, nil, 0, 0)
 						_ = c.Close()
 						continue
 					}
 					updateMcpTools(name, tools)
+					updateMcpPrompts(name, prompts)
 					a.mcpTools.Reset(maps.Collect(mcpTools.Seq2()))
-					updateMCPState(name, MCPStateConnected, nil, c, a.mcpTools.Len())
+					updateMCPState(name, MCPStateConnected, nil, c, a.mcpTools.Len(), len(prompts))
 				default:
 					continue
 				}
