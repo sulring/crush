@@ -1107,8 +1107,6 @@ func (a *agent) setupEvents(ctx context.Context) {
 					slog.Warn("MCP client not found for tools/prompts update", "name", name)
 					continue
 				}
-				prevState, _ := mcpStates.Get(name)
-				counts := prevState.Counts
 				switch event.Payload.Type {
 				case MCPEventToolsListChanged:
 					cfg := config.Get()
@@ -1119,10 +1117,8 @@ func (a *agent) setupEvents(ctx context.Context) {
 						_ = c.Close()
 						continue
 					}
-					counts.Tools = len(tools)
 					updateMcpTools(name, tools)
 					a.mcpTools.Reset(maps.Collect(mcpTools.Seq2()))
-					updateMCPState(name, MCPStateConnected, nil, c, counts)
 				case MCPEventPromptsListChanged:
 					prompts, err := getPrompts(ctx, c)
 					if err != nil {
@@ -1131,12 +1127,14 @@ func (a *agent) setupEvents(ctx context.Context) {
 						_ = c.Close()
 						continue
 					}
-					counts.Prompts = len(prompts)
 					updateMcpPrompts(name, prompts)
-					updateMCPState(name, MCPStateConnected, nil, c, counts)
 				default:
 					continue
 				}
+				updateMCPState(name, MCPStateConnected, nil, c, MCPCounts{
+					Tools:   mcpTools.Len(),
+					Prompts: mcpPrompts.Len(),
+				})
 			case <-ctx.Done():
 				slog.Debug("MCPEvents subscription cancelled")
 				return

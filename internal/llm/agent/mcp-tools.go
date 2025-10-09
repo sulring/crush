@@ -53,7 +53,6 @@ func (s MCPState) String() string {
 type MCPEventType string
 
 const (
-	MCPEventStateChanged       MCPEventType = "state_changed"
 	MCPEventToolsListChanged   MCPEventType = "tools_list_changed"
 	MCPEventPromptsListChanged MCPEventType = "prompts_list_changed"
 )
@@ -252,15 +251,6 @@ func updateMCPState(name string, state MCPState, err error, client *mcp.ClientSe
 		mcpClients.Del(name)
 	}
 	mcpStates.Set(name, info)
-
-	// Publish state change event
-	mcpBroker.Publish(pubsub.UpdatedEvent, MCPEvent{
-		Type:   MCPEventStateChanged,
-		Name:   name,
-		State:  state,
-		Error:  err,
-		Counts: counts,
-	})
 }
 
 // CloseMCPClients closes all MCP clients. This should be called during application shutdown.
