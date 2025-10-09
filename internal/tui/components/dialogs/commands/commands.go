@@ -252,30 +252,22 @@ func (c *commandDialogCmp) Cursor() *tea.Cursor {
 func (c *commandDialogCmp) commandTypeRadio() string {
 	t := styles.CurrentTheme()
 
-	selected := func(i CommandType) string {
+	fn := func(i CommandType) string {
 		if i == c.selected {
-			return "◉"
+			return "◉ " + i.String()
 		}
-		return "○"
+		return "○ " + i.String()
 	}
 
-	choices := []string{SystemCommands.String()}
-	icons := []string{selected(SystemCommands)}
-
+	parts := []string{
+		fn(SystemCommands),
+	}
 	if len(c.userCommands) > 0 {
-		choices = append(choices, UserCommands.String())
-		icons = append(icons, selected(UserCommands))
+		parts = append(parts, fn(UserCommands))
 	}
 	if len(c.mcpPrompts) > 0 {
-		choices = append(choices, MCPPrompts.String())
-		icons = append(icons, selected(MCPPrompts))
+		parts = append(parts, fn(MCPPrompts))
 	}
-
-	parts := make([]string, 0, 6)
-	for i, choice := range choices {
-		parts = append(parts, icons[i]+" "+choice)
-	}
-
 	return t.S().Base.Foreground(t.FgHalfMuted).Render(strings.Join(parts, " "))
 }
 
