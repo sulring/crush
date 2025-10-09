@@ -1110,17 +1110,6 @@ func (a *agent) setupEvents(ctx context.Context) {
 				prevState, _ := mcpStates.Get(name)
 				counts := prevState.Counts
 				switch event.Payload.Type {
-				case MCPEventPromptsListChanged:
-					prompts, err := getPrompts(ctx, c)
-					if err != nil {
-						slog.Error("error listing prompts", "error", err)
-						updateMCPState(name, MCPStateError, err, nil, MCPCounts{})
-						_ = c.Close()
-						continue
-					}
-					counts.Prompts = len(prompts)
-					updateMcpPrompts(name, prompts)
-					updateMCPState(name, MCPStateConnected, nil, c, counts)
 				case MCPEventToolsListChanged:
 					cfg := config.Get()
 					tools, err := getTools(ctx, name, a.permissions, c, cfg.WorkingDir())
@@ -1133,6 +1122,17 @@ func (a *agent) setupEvents(ctx context.Context) {
 					counts.Tools = len(tools)
 					updateMcpTools(name, tools)
 					a.mcpTools.Reset(maps.Collect(mcpTools.Seq2()))
+					updateMCPState(name, MCPStateConnected, nil, c, counts)
+				case MCPEventPromptsListChanged:
+					prompts, err := getPrompts(ctx, c)
+					if err != nil {
+						slog.Error("error listing prompts", "error", err)
+						updateMCPState(name, MCPStateError, err, nil, MCPCounts{})
+						_ = c.Close()
+						continue
+					}
+					counts.Prompts = len(prompts)
+					updateMcpPrompts(name, prompts)
 					updateMCPState(name, MCPStateConnected, nil, c, counts)
 				default:
 					continue
