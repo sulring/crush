@@ -64,13 +64,12 @@ func NewResourcePickerCmp() ResourcePicker {
 	t := styles.CurrentTheme()
 
 	delegate := list.NewDefaultDelegate()
-	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(t.Accent)
+	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(t.Secondary)
 	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.Foreground(t.FgMuted)
 
 	l := list.New([]list.Item{}, delegate, 0, listHeight)
-	l.Title = "Select MCP Resource"
-	l.Styles.Title = t.S().Title
 	l.SetShowStatusBar(false)
+	l.SetShowTitle(false)
 	l.SetFilteringEnabled(true)
 	l.DisableQuitKeybindings()
 
@@ -205,6 +204,7 @@ func (m *model) View() string {
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
+		t.S().Base.Padding(0, 1, 1, 1).Render(core.Title("Add MCP Resource", m.width-4)),
 		m.list.View(),
 		t.S().Base.Width(m.width-2).PaddingLeft(1).AlignHorizontal(lipgloss.Left).Render(m.help.View(m.keyMap)),
 	)
