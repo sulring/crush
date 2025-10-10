@@ -108,7 +108,7 @@ func assertBatchContainsOpenCompletionsMsg(t *testing.T, batchMsg tea.BatchMsg, 
 
 func mockDirLister(paths []string) fsext.DirectoryListerResolver {
 	return func() fsext.DirectoryLister {
-		return func(initialPath string, ignorePatterns []string, limit int) ([]string, bool, error) {
+		return func(initialPath string, ignorePatterns []string) ([]string, bool, error) {
 			return paths, false, nil
 		}
 	}
@@ -129,10 +129,6 @@ func simulateUpdate(up updater, msg tea.Msg) (updater, tea.Msg) {
 }
 
 var pngMagicNumberData = []byte("\x89PNG\x0D\x0A\x1A\x0A")
-
-func mockResolveAbs(path string) (string, error) {
-	return path, nil
-}
 
 func TestEditorTypingForwardSlashOpensCompletions(t *testing.T) {
 	testEditor := newEditor(&app.App{}, mockDirLister([]string{}))

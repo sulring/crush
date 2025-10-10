@@ -206,16 +206,20 @@ func (dl *directoryLister) getIgnore(path string) ignore.IgnoreParser {
 }
 
 type (
-	DirectoryLister         func(initialPath string, ignorePatterns []string, depth, limit int) ([]string, bool, error)
+	DirectoryLister         func(initialPath string, ignorePatterns []string) ([]string, bool, error)
 	DirectoryListerResolver func() DirectoryLister
 )
 
-func ResolveDirectoryLister() DirectoryLister {
-	return listDirectory
+func ResolveDirectoryLister(maxDepth, limit int) DirectoryListerResolver {
+	return func() DirectoryLister {
+		return listDirectory(maxDepth, limit)
+	}
 }
 
-func listDirectory(initialPath string, ignorePatterns []string, depth, limit int) ([]string, bool, error) {
-	return ListDirectory(initialPath, ignorePatterns, depth, limit)
+func listDirectory(maxDepth, limit int) func(initialPath string, ignorePatterns []string) ([]string, bool, error) {
+	return func(initialPath string, ignorePatterns []string) ([]string, bool, error) {
+		return ListDirectory(initialPath, ignorePatterns, maxDepth, limit)
+	}
 }
 
 // ListDirectory lists files and directories in the specified path,

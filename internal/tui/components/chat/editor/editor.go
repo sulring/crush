@@ -336,7 +336,8 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.isCompletionsOpen = true
 			m.currentQuery = ""
 			m.completionsStartIndex = curIdx
-			cmds = append(cmds, m.startCompletions)
+
+			cmds = append(cmds, m.startCompletions())
 		case m.isCompletionsOpen && curIdx <= m.completionsStartIndex:
 			cmds = append(cmds, util.CmdHandler(completions.CloseCompletionsMsg{}))
 		}
@@ -547,27 +548,27 @@ func (m *editorCmp) SetPosition(x, y int) tea.Cmd {
 	return nil
 }
 
-func (m *editorCmp) startCompletions() tea.Msg {
-	ls := m.app.Config().Options.TUI.Completions
-	depth, limit := ls.Limits()
-	files, _, _ := m.listDirResolver()(".", nil, depth, limit)
-	slices.Sort(files)
-	completionItems := make([]completions.Completion, 0, len(files))
-	for _, file := range files {
-		file = strings.TrimPrefix(file, "./")
-		completionItems = append(completionItems, completions.Completion{
-			Title: file,
-			Value: FileCompletionItem{
-				Path: file,
-			},
-		})
-	}
+func (m *editorCmp) startCompletions() func() tea.Msg {
+	return func() tea.Msg {
+		files, _, _ := m.listDirResolver()(".", nil)
+		slices.Sort(files)
+		completionItems := make([]completions.Completion, 0, len(files))
+		for _, file := range files {
+			file = strings.TrimPrefix(file, "./")
+			completionItems = append(completionItems, completions.Completion{
+				Title: file,
+				Value: FileCompletionItem{
+					Path: file,
+				},
+			})
+		}
 
-	x, y := m.completionsPosition()
-	return completions.OpenCompletionsMsg{
-		Completions: completionItems,
-		X:           x,
-		Y:           y,
+		x, y := m.completionsPosition()
+		return completions.OpenCompletionsMsg{
+			Completions: completionItems,
+			X:           x,
+			Y:           y,
+		}
 	}
 }
 
@@ -661,5 +662,6 @@ func newEditor(app *app.App, resolveDirLister fsext.DirectoryListerResolver) *ed
 }
 
 func New(app *app.App) Editor {
-	return newEditor(app, fsext.ResolveDirectoryLister)
+	ls := app.Config().Options.TUI.Completions.Limits
+	return newEditor(app, fsext.ResolveDirectoryLister(ls()))
 }
