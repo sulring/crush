@@ -4,7 +4,6 @@ version: "3"
 
 env:
   CGO_ENABLED: 0
-  TEA_DEBUG: 1
   GOEXPERIMENT: greenteagc
 
 tasks:
@@ -38,8 +37,6 @@ tasks:
 
   run:
     desc: Run build
-    env:
-      CRUSH_PROFILE: true
     cmds:
       - go run . {{.CLI_ARGS}}
 
@@ -52,6 +49,13 @@ tasks:
     desc: Run gofumpt
     cmds:
       - gofumpt -w .
+
+  dev:
+    desc: Run with profiling enabled
+    env:
+      CRUSH_PROFILE: true
+    cmds:
+      - go run .
 
   install:
     desc: Install the application
