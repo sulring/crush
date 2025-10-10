@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -257,7 +258,10 @@ func updateMCPState(name string, state MCPState, err error, client *mcp.ClientSe
 func CloseMCPClients() error {
 	var errs []error
 	for name, c := range mcpClients.Seq2() {
-		if err := c.Close(); err != nil {
+		if err := c.Close(); err != nil &&
+			!errors.Is(err, io.EOF) &&
+			!errors.Is(err, context.Canceled) &&
+			err.Error() != "signal: killed" {
 			errs = append(errs, fmt.Errorf("close mcp: %s: %w", name, err))
 		}
 	}
@@ -389,7 +393,6 @@ func createMCPSession(ctx context.Context, name string, m config.MCPConfig, reso
 	if err != nil {
 		updateMCPState(name, MCPStateError, maybeTimeoutErr(err, timeout), nil, MCPCounts{})
 		slog.Error("error starting mcp client", "error", err, "name", name)
-		_ = session.Close()
 		cancel()
 		return nil, err
 	}
