@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -38,18 +39,11 @@ type resourceItem struct {
 }
 
 func (i resourceItem) Title() string {
-	if i.resource.Title != "" {
-		return i.resource.Title
-	}
-	return i.resource.Name
+	return i.resource.URI
 }
 
 func (i resourceItem) Description() string {
-	desc := i.resource.Description
-	if desc == "" {
-		desc = i.resource.URI
-	}
-	return fmt.Sprintf("[%s] %s", i.clientName, desc)
+	return cmp.Or(i.resource.Description, i.resource.Title, i.resource.Name, "(no description)")
 }
 
 func (i resourceItem) FilterValue() string {
