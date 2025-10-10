@@ -4,6 +4,7 @@ version: "3"
 
 env:
   CGO_ENABLED: 0
+  TEA_DEBUG: 1
   GOEXPERIMENT: greenteagc
 
 tasks:
