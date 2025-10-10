@@ -562,3 +562,30 @@ func GetMCPPromptContent(ctx context.Context, clientName, promptName string, arg
 		Arguments: args,
 	})
 }
+
+// GetMCPResources returns all available MCP resources.
+func GetMCPResources() map[string]*mcp.Resource {
+	return maps.Collect(mcpResources.Seq2())
+}
+
+// GetMCPResource returns a specific MCP resource by name.
+func GetMCPResource(name string) (*mcp.Resource, bool) {
+	return mcpResources.Get(name)
+}
+
+// GetMCPResourcesByClient returns all resources for a specific MCP client.
+func GetMCPResourcesByClient(clientName string) ([]*mcp.Resource, bool) {
+	return mcpClient2Resources.Get(clientName)
+}
+
+// GetMCPResourceContent retrieves the content of an MCP resource.
+func GetMCPResourceContent(ctx context.Context, clientName, uri string) (*mcp.ReadResourceResult, error) {
+	c, err := getOrRenewClient(ctx, clientName)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: uri,
+	})
+}
