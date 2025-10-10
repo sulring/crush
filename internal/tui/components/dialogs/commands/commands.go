@@ -27,12 +27,12 @@ const (
 	defaultWidth int = 70
 )
 
-type CommandType uint
+type commandType uint
 
-func (c CommandType) String() string { return []string{"System", "User"}[c] }
+func (c commandType) String() string { return []string{"System", "User"}[c] }
 
 const (
-	SystemCommands CommandType = iota
+	SystemCommands commandType = iota
 	UserCommands
 )
 
@@ -60,7 +60,7 @@ type commandDialogCmp struct {
 	commandList  listModel
 	keyMap       CommandsDialogKeyMap
 	help         help.Model
-	selected     CommandType // Selected SystemCommands or UserCommands
+	selected     commandType // Selected SystemCommands or UserCommands
 	userCommands []Command   // User-defined commands
 	sessionID    string      // Current session ID
 	ctx          context.Context
@@ -167,7 +167,7 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return c, nil
 }
 
-func (c *commandDialogCmp) next() CommandType {
+func (c *commandDialogCmp) next() commandType {
 	if c.selected == SystemCommands {
 		return UserCommands
 	}
@@ -207,7 +207,7 @@ func (c *commandDialogCmp) Cursor() *tea.Cursor {
 func (c *commandDialogCmp) commandTypeRadio() string {
 	t := styles.CurrentTheme()
 
-	fn := func(i CommandType) string {
+	fn := func(i commandType) string {
 		if i == c.selected {
 			return "◉ " + i.String()
 		}
@@ -227,7 +227,7 @@ func (c *commandDialogCmp) listWidth() int {
 	return defaultWidth - 2 // 4 for padding
 }
 
-func (c *commandDialogCmp) setCommandType(commandType CommandType) tea.Cmd {
+func (c *commandDialogCmp) setCommandType(commandType commandType) tea.Cmd {
 	c.selected = commandType
 
 	var commands []Command
