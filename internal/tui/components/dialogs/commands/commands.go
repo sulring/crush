@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"context"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
@@ -25,8 +27,12 @@ const (
 	defaultWidth int = 70
 )
 
+type CommandType uint
+
+func (c CommandType) String() string { return []string{"System", "User"}[c] }
+
 const (
-	SystemCommands int = iota
+	SystemCommands CommandType = iota
 	UserCommands
 )
 
@@ -54,9 +60,11 @@ type commandDialogCmp struct {
 	commandList  listModel
 	keyMap       CommandsDialogKeyMap
 	help         help.Model
-	commandType  int       // SystemCommands or UserCommands
-	userCommands []Command // User-defined commands
-	sessionID    string    // Current session ID
+	selected     CommandType // Selected SystemCommands or UserCommands
+	userCommands []Command   // User-defined commands
+	sessionID    string      // Current session ID
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 type (
@@ -102,7 +110,7 @@ func NewCommandDialog(sessionID string) CommandsDialog {
 		width:       defaultWidth,
 		keyMap:      DefaultCommandsDialogKeyMap(),
 		help:        help,
-		commandType: SystemCommands,
+		selected:    SystemCommands,
 		sessionID:   sessionID,
 	}
 }
@@ -113,7 +121,7 @@ func (c *commandDialogCmp) Init() tea.Cmd {
 		return util.ReportError(err)
 	}
 	c.userCommands = commands
-	return c.SetCommandType(c.commandType)
+	return c.setCommandType(c.selected)
 }
 
 func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -122,7 +130,7 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		c.wWidth = msg.Width
 		c.wHeight = msg.Height
 		return c, tea.Batch(
-			c.SetCommandType(c.commandType),
+			c.setCommandType(c.selected),
 			c.commandList.SetSize(c.listWidth(), c.listHeight()),
 		)
 	case tea.KeyPressMsg:
@@ -133,6 +141,9 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return c, nil // No item selected, do nothing
 			}
 			command := (*selectedItem).Value()
+			if c.cancel != nil {
+				c.cancel()
+			}
 			return c, tea.Sequence(
 				util.CmdHandler(dialogs.CloseDialogMsg{}),
 				command.Handler(command),
@@ -141,13 +152,11 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(c.userCommands) == 0 {
 				return c, nil
 			}
-			// Toggle command type between System and User commands
-			if c.commandType == SystemCommands {
-				return c, c.SetCommandType(UserCommands)
-			} else {
-				return c, c.SetCommandType(SystemCommands)
-			}
+			return c, c.setCommandType(c.next())
 		case key.Matches(msg, c.keyMap.Close):
+			if c.cancel != nil {
+				c.cancel()
+			}
 			return c, util.CmdHandler(dialogs.CloseDialogMsg{})
 		default:
 			u, cmd := c.commandList.Update(msg)
@@ -156,6 +165,20 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return c, nil
+}
+
+func (c *commandDialogCmp) next() CommandType {
+	switch c.selected {
+	case SystemCommands:
+		if len(c.userCommands) > 0 {
+			return UserCommands
+		}
+		fallthrough
+	case UserCommands:
+		fallthrough
+	default:
+		return SystemCommands
+	}
 }
 
 func (c *commandDialogCmp) View() string {
@@ -190,26 +213,35 @@ func (c *commandDialogCmp) Cursor() *tea.Cursor {
 
 func (c *commandDialogCmp) commandTypeRadio() string {
 	t := styles.CurrentTheme()
-	choices := []string{"System", "User"}
-	iconSelected := "◉"
-	iconUnselected := "○"
-	if c.commandType == SystemCommands {
-		return t.S().Base.Foreground(t.FgHalfMuted).Render(iconSelected + " " + choices[0] + " " + iconUnselected + " " + choices[1])
+
+	fn := func(i CommandType) string {
+		if i == c.selected {
+			return "◉ " + i.String()
+		}
+		return "○ " + i.String()
 	}
-	return t.S().Base.Foreground(t.FgHalfMuted).Render(iconUnselected + " " + choices[0] + " " + iconSelected + " " + choices[1])
+
+	parts := []string{
+		fn(SystemCommands),
+	}
+	if len(c.userCommands) > 0 {
+		parts = append(parts, fn(UserCommands))
+	}
+	return t.S().Base.Foreground(t.FgHalfMuted).Render(strings.Join(parts, " "))
 }
 
 func (c *commandDialogCmp) listWidth() int {
 	return defaultWidth - 2 // 4 for padding
 }
 
-func (c *commandDialogCmp) SetCommandType(commandType int) tea.Cmd {
-	c.commandType = commandType
+func (c *commandDialogCmp) setCommandType(commandType CommandType) tea.Cmd {
+	c.selected = commandType
 
 	var commands []Command
-	if c.commandType == SystemCommands {
+	switch c.selected {
+	case SystemCommands:
 		commands = c.defaultCommands()
-	} else {
+	case UserCommands:
 		commands = c.userCommands
 	}
 
