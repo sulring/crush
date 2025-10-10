@@ -1,6 +1,7 @@
 package filepicker
 
 import (
+	"io/fs"
 	"testing"
 	"testing/fstest"
 
@@ -11,19 +12,24 @@ import (
 var pngMagicNumberData = []byte("\x89PNG\x0D\x0A\x1A\x0A")
 
 func TestOnPasteMockFSWithValidPath(t *testing.T) {
-	mockFS := fstest.MapFS{
-		"image1.png": &fstest.MapFile{
-			Data: pngMagicNumberData,
-		},
-		"image2.png": &fstest.MapFile{
-			Data: []byte("fake png content"),
-		},
+	var mockedFSPath string
+	resolveTestFS := func(fsysPath string) fs.FS {
+		mockedFSPath = fsysPath
+		return fstest.MapFS{
+			"image1.png": &fstest.MapFile{
+				Data: pngMagicNumberData,
+			},
+			"image2.png": &fstest.MapFile{
+				Data: []byte("fake png content"),
+			},
+		}
 	}
 
 	// Test with the first file
-	cmd := onPaste(mockFS, "image1.png")
+	cmd := onPaste(resolveTestFS, "/home/testuser/images/image1.png")
 	msg := cmd()
 
+	assert.Equal(t, "/home/testuser/images", mockedFSPath)
 	filePickedMsg, ok := msg.(FilePickedMsg)
 	require.True(t, ok)
 	require.NotNil(t, filePickedMsg)
