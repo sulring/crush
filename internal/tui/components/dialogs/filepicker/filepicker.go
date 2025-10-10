@@ -130,33 +130,41 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Get the path of the selected file.
 		return m, tea.Sequence(
 			util.CmdHandler(dialogs.CloseDialogMsg{}),
-			func() tea.Msg {
-				isFileLarge, err := IsFileTooBig(path, MaxAttachmentSize)
-				if err != nil {
-					return util.ReportError(fmt.Errorf("unable to read the image: %w", err))
-				}
-				if isFileLarge {
-					return util.ReportError(fmt.Errorf("file too large, max 5MB"))
-				}
-
-				content, err := os.ReadFile(path)
-				if err != nil {
-					return util.ReportError(fmt.Errorf("unable to read the image: %w", err))
-				}
-
-				mimeBufferSize := min(512, len(content))
-				mimeType := http.DetectContentType(content[:mimeBufferSize])
-				fileName := filepath.Base(path)
-				attachment := message.Attachment{FilePath: path, FileName: fileName, MimeType: mimeType, Content: content}
-				return FilePickedMsg{
-					Attachment: attachment,
-				}
-			},
+			onPaste(resolveFS(filepath.Dir(path)), path),
 		)
 	}
 	m.image, cmd = m.image.Update(msg)
 	cmds = append(cmds, cmd)
 	return m, tea.Batch(cmds...)
+}
+
+func resolveFS(baseDirPath string) fs.FS {
+	return os.DirFS(baseDirPath)
+}
+
+func onPaste(fsys fs.FS, path string) func() tea.Msg {
+	name := filepath.Base(path)
+	return func() tea.Msg {
+		isFileLarge, err := IsFileTooBigWithFS(fsys, name, MaxAttachmentSize)
+		if err != nil {
+			return util.ReportError(fmt.Errorf("unable to read the image: %w, %s", err, path))
+		}
+		if isFileLarge {
+			return util.ReportError(fmt.Errorf("file too large, max 5MB"))
+		}
+
+		content, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return util.ReportError(fmt.Errorf("unable to read the image: %w", err))
+		}
+
+		mimeBufferSize := min(512, len(content))
+		mimeType := http.DetectContentType(content[:mimeBufferSize])
+		attachment := message.Attachment{FilePath: path, FileName: name, MimeType: mimeType, Content: content}
+		return FilePickedMsg{
+			Attachment: attachment,
+		}
+	}
 }
 
 func (m *model) View() string {

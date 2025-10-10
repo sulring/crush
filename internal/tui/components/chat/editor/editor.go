@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"os"
@@ -185,7 +186,8 @@ func onCompletionItemSelect(fsys fs.FS, activeModelHasImageSupport func() (bool,
 			// TODO(tauraamui): consolidate this kind of standard image attachment related warning
 			return m, util.ReportWarn("File attachments are not supported by the current model: " + modelName)
 		}
-		tooBig, _ := filepicker.IsFileTooBigWithFS(fsys, path, filepicker.MaxAttachmentSize)
+		slog.Debug("checking if image is too big", path, 1)
+		tooBig, _ := filepicker.IsFileTooBigWithFS(os.DirFS(filepath.Dir(path)), path, filepicker.MaxAttachmentSize)
 		if tooBig {
 			return m, nil
 		}
@@ -238,49 +240,6 @@ func isExtOfAllowedImageType(path string) bool {
 
 type ResolveAbs func(path string) (string, error)
 
-func onPaste(fsysAbs ResolveAbs, activeModelHasImageSupport func() (bool, string), m *editorCmp, msg tea.PasteMsg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	path := strings.ReplaceAll(string(msg), "\\ ", " ")
-	// try to get an image, in this case specifically because the file
-	// path cannot have been limited to just the PWD as the root, since the
-	// path is coming from the contents of a clipboard
-	path, err := fsysAbs(strings.TrimSpace(path))
-	if err != nil {
-		m.textarea, cmd = m.textarea.Update(msg)
-		return m, cmd
-	}
-	// TODO(tauraamui) [17/09/2025]: this needs to be combined with the actual data inference/checking
-	//                  of the contents that happens when we resolve the "mime" type
-	if !isExtOfAllowedImageType(path) {
-		m.textarea, cmd = m.textarea.Update(msg)
-		return m, cmd
-	}
-	if imagesSupported, modelName := activeModelHasImageSupport(); !imagesSupported {
-		// TODO(tauraamui): consolidate this kind of standard image attachment related warning
-		return m, util.ReportWarn("File attachments are not supported by the current model: " + modelName)
-	}
-	tooBig, _ := filepicker.IsFileTooBig(path, filepicker.MaxAttachmentSize)
-	if tooBig {
-		m.textarea, cmd = m.textarea.Update(msg)
-		return m, cmd
-	}
-
-	// FIX(tauraamui) [19/09/2025]: this is incorrectly attempting to read a file from its abs path,
-	//                              whereas the FS we're accessing only starts from our relative dir/PWD
-	content, err := os.ReadFile(path)
-	if err != nil {
-		m.textarea, cmd = m.textarea.Update(msg)
-		return m, cmd
-	}
-	mimeBufferSize := min(512, len(content))
-	mimeType := http.DetectContentType(content[:mimeBufferSize])
-	fileName := filepath.Base(path)
-	attachment := message.Attachment{FilePath: path, FileName: fileName, MimeType: mimeType, Content: content}
-	return m, util.CmdHandler(filepicker.FilePickedMsg{
-		Attachment: attachment,
-	})
-}
-
 func activeModelHasImageSupport() (bool, string) {
 	agentCfg := config.Get().Agents["coder"]
 	model := config.Get().GetModelByType(agentCfg.Model)
@@ -320,8 +279,6 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case OpenEditorMsg:
 		m.textarea.SetValue(msg.Text)
 		m.textarea.MoveToEnd()
-	case tea.PasteMsg:
-		return onPaste(filepath.Abs, activeModelHasImageSupport, m, msg) // inject fsys accessible from PWD
 	case commands.ToggleYoloModeMsg:
 		m.setEditorPrompt()
 		return m, nil
