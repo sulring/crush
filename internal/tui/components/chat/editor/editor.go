@@ -80,7 +80,7 @@ var DeleteKeyMaps = DeleteAttachmentKeyMaps{
 		key.WithHelp("ctrl+r+{i}", "delete attachment at index i"),
 	),
 	Escape: key.NewBinding(
-		key.WithKeys("esc"),
+		key.WithKeys("esc", "alt+esc"),
 		key.WithHelp("esc", "cancel delete mode"),
 	),
 	DeleteAllAttachments: key.NewBinding(
@@ -548,7 +548,9 @@ func (m *editorCmp) SetPosition(x, y int) tea.Cmd {
 }
 
 func (m *editorCmp) startCompletions() tea.Msg {
-	files, _, _ := m.listDirResolver()(".", nil, 0)
+	ls := m.app.Config().Options.TUI.Completions
+	depth, limit := ls.Limits()
+	files, _, _ := m.listDirResolver()(".", nil, depth, limit)
 	slices.Sort(files)
 	completionItems := make([]completions.Completion, 0, len(files))
 	for _, file := range files {

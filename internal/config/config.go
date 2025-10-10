@@ -117,18 +117,33 @@ type MCPConfig struct {
 }
 
 type LSPConfig struct {
-	Disabled  bool              `json:"enabled,omitempty" jsonschema:"description=Whether this LSP server is disabled,default=false"`
-	Command   string            `json:"command" jsonschema:"required,description=Command to execute for the LSP server,example=gopls"`
-	Args      []string          `json:"args,omitempty" jsonschema:"description=Arguments to pass to the LSP server command"`
-	Env       map[string]string `json:"env,omitempty" jsonschema:"description=Environment variables to set to the LSP server command"`
-	Options   any               `json:"options,omitempty" jsonschema:"description=LSP server-specific configuration options"`
-	FileTypes []string          `json:"filetypes,omitempty" jsonschema:"description=File types this LSP server handles,example=go,example=mod,example=rs,example=c,example=js,example=ts"`
+	Disabled    bool              `json:"disabled,omitempty" jsonschema:"description=Whether this LSP server is disabled,default=false"`
+	Command     string            `json:"command,omitempty" jsonschema:"required,description=Command to execute for the LSP server,example=gopls"`
+	Args        []string          `json:"args,omitempty" jsonschema:"description=Arguments to pass to the LSP server command"`
+	Env         map[string]string `json:"env,omitempty" jsonschema:"description=Environment variables to set to the LSP server command"`
+	FileTypes   []string          `json:"filetypes,omitempty" jsonschema:"description=File types this LSP server handles,example=go,example=mod,example=rs,example=c,example=js,example=ts"`
+	RootMarkers []string          `json:"root_markers,omitempty" jsonschema:"description=Files or directories that indicate the project root,example=go.mod,example=package.json,example=Cargo.toml"`
+	InitOptions map[string]any    `json:"init_options,omitempty" jsonschema:"description=Initialization options passed to the LSP server during initialize request"`
+	Options     map[string]any    `json:"options,omitempty" jsonschema:"description=LSP server-specific settings passed during initialization"`
 }
 
 type TUIOptions struct {
 	CompactMode bool   `json:"compact_mode,omitempty" jsonschema:"description=Enable compact mode for the TUI interface,default=false"`
 	DiffMode    string `json:"diff_mode,omitempty" jsonschema:"description=Diff mode for the TUI interface,enum=unified,enum=split"`
 	// Here we can add themes later or any TUI related options
+	//
+
+	Completions Completions `json:"completions,omitzero" jsonschema:"description=Completions UI options"`
+}
+
+// Completions defines options for the completions UI.
+type Completions struct {
+	MaxDepth *int `json:"max_depth,omitempty" jsonschema:"description=Maximum depth for the ls tool,default=0,example=10"`
+	MaxItems *int `json:"max_items,omitempty" jsonschema:"description=Maximum number of items to return for the ls tool,default=1000,example=100"`
+}
+
+func (c Completions) Limits() (depth, items int) {
+	return ptrValOr(c.MaxDepth, -1), ptrValOr(c.MaxItems, -1)
 }
 
 type Permissions struct {
@@ -136,14 +151,22 @@ type Permissions struct {
 	SkipRequests bool     `json:"-"`                                                                                                                              // Automatically accept all permissions (YOLO mode)
 }
 
+type Attribution struct {
+	CoAuthoredBy  bool `json:"co_authored_by,omitempty" jsonschema:"description=Add Co-Authored-By trailer to commit messages,default=true"`
+	GeneratedWith bool `json:"generated_with,omitempty" jsonschema:"description=Add Generated with Crush line to commit messages and issues and PRs,default=true"`
+}
+
 type Options struct {
-	ContextPaths         []string    `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=CRUSH.md"`
-	TUI                  *TUIOptions `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
-	Debug                bool        `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
-	DebugLSP             bool        `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
-	DisableAutoSummarize bool        `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
-	DataDirectory        string      `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.crush,example=.crush"` // Relative to the cwd
-	DisabledTools        []string    `json:"disabled_tools" jsonschema:"description=Tools to disable"`
+	ContextPaths              []string     `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=CRUSH.md"`
+	TUI                       *TUIOptions  `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
+	Debug                     bool         `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
+	DebugLSP                  bool         `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
+	DisableAutoSummarize      bool         `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
+	DataDirectory             string       `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.crush,example=.crush"` // Relative to the cwd
+	DisabledTools             []string     `json:"disabled_tools" jsonschema:"description=Tools to disable"`
+	DisableProviderAutoUpdate bool         `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
+	Attribution               *Attribution `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
+	DisableMetrics            bool         `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
 }
 
 type MCPs map[string]MCPConfig
@@ -236,6 +259,19 @@ type Agent struct {
 	ContextPaths []string `json:"context_paths,omitempty"`
 }
 
+type Tools struct {
+	Ls ToolLs `json:"ls,omitzero"`
+}
+
+type ToolLs struct {
+	MaxDepth *int `json:"max_depth,omitempty" jsonschema:"description=Maximum depth for the ls tool,default=0,example=10"`
+	MaxItems *int `json:"max_items,omitempty" jsonschema:"description=Maximum number of items to return for the ls tool,default=1000,example=100"`
+}
+
+func (t ToolLs) Limits() (depth, items int) {
+	return ptrValOr(t.MaxDepth, -1), ptrValOr(t.MaxItems, -1)
+}
+
 // Config holds the configuration for crush.
 type Config struct {
 	Schema string `json:"$schema,omitempty"`
@@ -253,6 +289,8 @@ type Config struct {
 	Options *Options `json:"options,omitempty" jsonschema:"description=General application options"`
 
 	Permissions *Permissions `json:"permissions,omitempty" jsonschema:"description=Permission settings for tool usage"`
+
+	Tools Tools `json:"tools,omitzero" jsonschema:"description=Tool configurations"`
 
 	// Internal
 	workingDir string `json:"-"`
@@ -418,6 +456,7 @@ func (c *Config) SetProviderAPIKey(providerID, apiKey string) error {
 
 func allToolNames() []string {
 	return []string{
+		"agent",
 		"bash",
 		"download",
 		"edit",
@@ -499,7 +538,7 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
-		if c.ID == "openrouter" {
+		if c.ID == string(catwalk.InferenceProviderOpenRouter) {
 			testURL = baseURL + "/credits"
 		} else {
 			testURL = baseURL + "/models"
@@ -537,8 +576,15 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request for provider %s: %w", c.ID, err)
 	}
-	if b.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to connect to provider %s: %s", c.ID, b.Status)
+	if c.ID == string(catwalk.InferenceProviderZAI) {
+		if b.StatusCode == http.StatusUnauthorized {
+			// for z.ai just check if the http response is not 401
+			return fmt.Errorf("failed to connect to provider %s: %s", c.ID, b.Status)
+		}
+	} else {
+		if b.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to connect to provider %s: %s", c.ID, b.Status)
+		}
 	}
 	_ = b.Body.Close()
 	return nil
@@ -560,4 +606,11 @@ func resolveEnvs(envs map[string]string) []string {
 		res = append(res, fmt.Sprintf("%s=%s", k, v))
 	}
 	return res
+}
+
+func ptrValOr[T any](t *T, el T) T {
+	if t == nil {
+		return el
+	}
+	return *t
 }

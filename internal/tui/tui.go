@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/event"
 	"github.com/charmbracelet/crush/internal/llm/agent"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -196,6 +198,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.app.CoderAgent.IsBusy() {
 			return a, util.ReportWarn("Agent is busy, please wait...")
 		}
+
 		config.Get().UpdatePreferredModel(msg.ModelType, msg.Model)
 
 		// Update the agent with the new model/provider configuration
@@ -211,6 +214,8 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// File Picker
 	case commands.OpenFilePickerMsg:
+		event.FilePickerOpened()
+
 		if a.dialog.ActiveDialogID() == filepicker.FilePickerID {
 			// If the commands dialog is already open, close it
 			return a, util.CmdHandler(dialogs.CloseDialogMsg{})
@@ -597,6 +602,12 @@ func (a *appModel) View() tea.View {
 
 	view.Layer = canvas
 	view.Cursor = cursor
+	view.ProgressBar = tea.NewProgressBar(tea.ProgressBarNone, 0)
+	if a.app.CoderAgent.IsBusy() {
+		// use a random percentage to prevent the ghostty from hiding it after
+		// a timeout.
+		view.ProgressBar = tea.NewProgressBar(tea.ProgressBarIndeterminate, rand.Intn(100))
+	}
 	return view
 }
 

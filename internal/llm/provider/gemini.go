@@ -44,6 +44,14 @@ func createGeminiClient(opts providerClientOptions) (*genai.Client, error) {
 		APIKey:  opts.apiKey,
 		Backend: genai.BackendGeminiAPI,
 	}
+	if opts.baseURL != "" {
+		resolvedBaseURL, err := config.Get().Resolve(opts.baseURL)
+		if err == nil && resolvedBaseURL != "" {
+			cc.HTTPOptions = genai.HTTPOptions{
+				BaseURL: resolvedBaseURL,
+			}
+		}
+	}
 	if config.Get().Options.Debug {
 		cc.HTTPClient = log.NewHTTPClient()
 	}
@@ -62,9 +70,8 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 			var parts []*genai.Part
 			parts = append(parts, &genai.Part{Text: msg.Content().String()})
 			for _, binaryContent := range msg.BinaryContent() {
-				imageFormat := strings.Split(binaryContent.MIMEType, "/")
 				parts = append(parts, &genai.Part{InlineData: &genai.Blob{
-					MIMEType: imageFormat[1],
+					MIMEType: binaryContent.MIMEType,
 					Data:     binaryContent.Data,
 				}})
 			}
@@ -102,6 +109,7 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 			}
 
 		case message.Tool:
+			var toolParts []*genai.Part
 			for _, result := range msg.ToolResults() {
 				response := map[string]any{"result": result.Content}
 				parsed, err := parseJSONToMap(result.Content)
@@ -121,16 +129,17 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 					}
 				}
 
-				history = append(history, &genai.Content{
-					Parts: []*genai.Part{
-						{
-							FunctionResponse: &genai.FunctionResponse{
-								Name:     toolCall.Name,
-								Response: response,
-							},
-						},
+				toolParts = append(toolParts, &genai.Part{
+					FunctionResponse: &genai.FunctionResponse{
+						Name:     toolCall.Name,
+						Response: response,
 					},
-					Role: genai.RoleModel,
+				})
+			}
+			if len(toolParts) > 0 {
+				history = append(history, &genai.Content{
+					Parts: toolParts,
+					Role:  genai.RoleUser,
 				})
 			}
 		}
@@ -373,17 +382,7 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 								Finished: true,
 							}
 
-							isNew := true
-							for _, existing := range toolCalls {
-								if existing.Name == newCall.Name && existing.Input == newCall.Input {
-									isNew = false
-									break
-								}
-							}
-
-							if isNew {
-								toolCalls = append(toolCalls, newCall)
-							}
+							toolCalls = append(toolCalls, newCall)
 						}
 					}
 				} else {
@@ -441,9 +440,15 @@ func (g *geminiClient) shouldRetry(attempts int, err error) (bool, int64, error)
 
 	// Check for token expiration (401 Unauthorized)
 	if contains(errMsg, "unauthorized", "invalid api key", "api key expired") {
+		prev := g.providerOptions.apiKey
+		// in case the key comes from a script, we try to re-evaluate it.
 		g.providerOptions.apiKey, err = config.Get().Resolve(g.providerOptions.config.APIKey)
 		if err != nil {
 			return false, 0, fmt.Errorf("failed to resolve API key: %w", err)
+		}
+		// if it didn't change, do not retry.
+		if prev == g.providerOptions.apiKey {
+			return false, 0, err
 		}
 		g.client, err = createGeminiClient(g.providerOptions)
 		if err != nil {

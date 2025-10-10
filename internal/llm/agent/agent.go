@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/event"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/llm/prompt"
 	"github.com/charmbracelet/crush/internal/llm/provider"
@@ -23,12 +25,6 @@ import (
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/shell"
-)
-
-// Common errors
-var (
-	ErrRequestCancelled = errors.New("request canceled by user")
-	ErrSessionBusy      = errors.New("session is currently processing another request")
 )
 
 type AgentEventType string
@@ -66,12 +62,17 @@ type Service interface {
 
 type agent struct {
 	*pubsub.Broker[AgentEvent]
-	agentCfg config.Agent
-	sessions session.Service
-	messages message.Service
-	mcpTools []McpTool
+	agentCfg    config.Agent
+	sessions    session.Service
+	messages    message.Service
+	permissions permission.Service
+	baseTools   *csync.Map[string, tools.BaseTool]
+	mcpTools    *csync.Map[string, tools.BaseTool]
+	lspClients  *csync.Map[string, *lsp.Client]
 
-	tools *csync.LazySlice[tools.BaseTool]
+	// We need this to be able to update it when model changes
+	agentToolFn  func() (tools.BaseTool, error)
+	cleanupFuncs []func()
 
 	provider   provider.Provider
 	providerID string
@@ -81,8 +82,7 @@ type agent struct {
 	summarizeProviderID string
 
 	activeRequests *csync.Map[string, context.CancelFunc]
-
-	promptQueue *csync.Map[string, []string]
+	promptQueue    *csync.Map[string, []string]
 }
 
 var agentPromptMap = map[string]prompt.PromptID{
@@ -98,22 +98,23 @@ func NewAgent(
 	sessions session.Service,
 	messages message.Service,
 	history history.Service,
-	lspClients map[string]*lsp.Client,
+	lspClients *csync.Map[string, *lsp.Client],
 ) (Service, error) {
 	cfg := config.Get()
 
-	var agentTool tools.BaseTool
-	if agentCfg.ID == "coder" {
-		taskAgentCfg := config.Get().Agents["task"]
-		if taskAgentCfg.ID == "" {
-			return nil, fmt.Errorf("task agent not found in config")
+	var agentToolFn func() (tools.BaseTool, error)
+	if agentCfg.ID == "coder" && slices.Contains(agentCfg.AllowedTools, AgentToolName) {
+		agentToolFn = func() (tools.BaseTool, error) {
+			taskAgentCfg := config.Get().Agents["task"]
+			if taskAgentCfg.ID == "" {
+				return nil, fmt.Errorf("task agent not found in config")
+			}
+			taskAgent, err := NewAgent(ctx, taskAgentCfg, permissions, sessions, messages, history, lspClients)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create task agent: %w", err)
+			}
+			return NewAgentTool(taskAgent, sessions, messages), nil
 		}
-		taskAgent, err := NewAgent(ctx, taskAgentCfg, permissions, sessions, messages, history, lspClients)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create task agent: %w", err)
-		}
-
-		agentTool = NewAgentTool(taskAgent, sessions, messages)
 	}
 
 	providerCfg := config.Get().GetProviderForModel(agentCfg.Model)
@@ -173,15 +174,17 @@ func NewAgent(
 		return nil, err
 	}
 
-	toolFn := func() []tools.BaseTool {
-		slog.Info("Initializing agent tools", "agent", agentCfg.ID)
+	baseToolsFn := func() map[string]tools.BaseTool {
+		slog.Info("Initializing agent base tools", "agent", agentCfg.ID)
 		defer func() {
-			slog.Info("Initialized agent tools", "agent", agentCfg.ID)
+			slog.Info("Initialized agent base tools", "agent", agentCfg.ID)
 		}()
 
+		// Base tools available to all agents
 		cwd := cfg.WorkingDir()
-		allTools := []tools.BaseTool{
-			tools.NewBashTool(permissions, cwd),
+		result := make(map[string]tools.BaseTool)
+		for _, tool := range []tools.BaseTool{
+			tools.NewBashTool(permissions, cwd, cfg.Options.Attribution),
 			tools.NewDownloadTool(permissions, cwd),
 			tools.NewEditTool(lspClients, permissions, history, cwd),
 			tools.NewMultiEditTool(lspClients, permissions, history, cwd),
@@ -192,35 +195,25 @@ func NewAgent(
 			tools.NewSourcegraphTool(),
 			tools.NewViewTool(lspClients, permissions, cwd),
 			tools.NewWriteTool(lspClients, permissions, history, cwd),
+		} {
+			result[tool.Name()] = tool
 		}
+		return result
+	}
+	mcpToolsFn := func() map[string]tools.BaseTool {
+		slog.Info("Initializing agent mcp tools", "agent", agentCfg.ID)
+		defer func() {
+			slog.Info("Initialized agent mcp tools", "agent", agentCfg.ID)
+		}()
 
 		mcpToolsOnce.Do(func() {
-			mcpTools = doGetMCPTools(ctx, permissions, cfg)
+			doGetMCPTools(ctx, permissions, cfg)
 		})
-		allTools = append(allTools, mcpTools...)
 
-		if len(lspClients) > 0 {
-			allTools = append(allTools, tools.NewDiagnosticsTool(lspClients))
-		}
-
-		if agentTool != nil {
-			allTools = append(allTools, agentTool)
-		}
-
-		if agentCfg.AllowedTools == nil {
-			return allTools
-		}
-
-		var filteredTools []tools.BaseTool
-		for _, tool := range allTools {
-			if slices.Contains(agentCfg.AllowedTools, tool.Name()) {
-				filteredTools = append(filteredTools, tool)
-			}
-		}
-		return filteredTools
+		return maps.Collect(mcpTools.Seq2())
 	}
 
-	return &agent{
+	a := &agent{
 		Broker:              pubsub.NewBroker[AgentEvent](),
 		agentCfg:            agentCfg,
 		provider:            agentProvider,
@@ -230,10 +223,16 @@ func NewAgent(
 		titleProvider:       titleProvider,
 		summarizeProvider:   summarizeProvider,
 		summarizeProviderID: string(providerCfg.ID),
+		agentToolFn:         agentToolFn,
 		activeRequests:      csync.NewMap[string, context.CancelFunc](),
-		tools:               csync.NewLazySlice(toolFn),
+		mcpTools:            csync.NewLazyMap(mcpToolsFn),
+		baseTools:           csync.NewLazyMap(baseToolsFn),
 		promptQueue:         csync.NewMap[string, []string](),
-	}, nil
+		permissions:         permissions,
+		lspClients:          lspClients,
+	}
+	a.setupEvents(ctx)
+	return a, nil
 }
 
 func (a *agent) Model() catwalk.Model {
@@ -322,7 +321,13 @@ func (a *agent) generateTitle(ctx context.Context, sessionID string, content str
 		return fmt.Errorf("no response received from title provider")
 	}
 
-	title := strings.TrimSpace(strings.ReplaceAll(finalResponse.Content, "\n", " "))
+	title := strings.ReplaceAll(finalResponse.Content, "\n", " ")
+
+	if idx := strings.Index(title, "</think>"); idx > 0 {
+		title = title[idx+len("</think>"):]
+	}
+
+	title = strings.TrimSpace(title)
 	if title == "" {
 		return nil
 	}
@@ -355,8 +360,9 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	}
 
 	genCtx, cancel := context.WithCancel(ctx)
-
 	a.activeRequests.Set(sessionID, cancel)
+	startTime := time.Now()
+
 	go func() {
 		slog.Debug("Request started", "sessionID", sessionID)
 		defer log.RecoverPanic("agent.Run", func() {
@@ -367,16 +373,24 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 			attachmentParts = append(attachmentParts, message.BinaryContent{Path: attachment.FilePath, MIMEType: attachment.MimeType, Data: attachment.Content})
 		}
 		result := a.processGeneration(genCtx, sessionID, content, attachmentParts)
-		if result.Error != nil && !errors.Is(result.Error, ErrRequestCancelled) && !errors.Is(result.Error, context.Canceled) {
-			slog.Error(result.Error.Error())
+		if result.Error != nil {
+			if isCancelledErr(result.Error) {
+				slog.Error("Request canceled", "sessionID", sessionID)
+			} else {
+				slog.Error("Request errored", "sessionID", sessionID, "error", result.Error.Error())
+				event.Error(result.Error)
+			}
+		} else {
+			slog.Debug("Request completed", "sessionID", sessionID)
 		}
-		slog.Debug("Request completed", "sessionID", sessionID)
+		a.eventPromptResponded(sessionID, time.Since(startTime).Truncate(time.Second))
 		a.activeRequests.Del(sessionID)
 		cancel()
 		a.Publish(pubsub.CreatedEvent, result)
 		events <- result
 		close(events)
 	}()
+	a.eventPromptSent(sessionID)
 	return events, nil
 }
 
@@ -500,6 +514,29 @@ func (a *agent) createUserMessage(ctx context.Context, sessionID, content string
 	})
 }
 
+func (a *agent) getAllTools() ([]tools.BaseTool, error) {
+	var allTools []tools.BaseTool
+	for tool := range a.baseTools.Seq() {
+		if a.agentCfg.AllowedTools == nil || slices.Contains(a.agentCfg.AllowedTools, tool.Name()) {
+			allTools = append(allTools, tool)
+		}
+	}
+	if a.agentCfg.ID == "coder" {
+		allTools = slices.AppendSeq(allTools, a.mcpTools.Seq())
+		if a.lspClients.Len() > 0 {
+			allTools = append(allTools, tools.NewDiagnosticsTool(a.lspClients))
+		}
+	}
+	if a.agentToolFn != nil {
+		agentTool, agentToolErr := a.agentToolFn()
+		if agentToolErr != nil {
+			return nil, agentToolErr
+		}
+		allTools = append(allTools, agentTool)
+	}
+	return allTools, nil
+}
+
 func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message) (message.Message, *message.Message, error) {
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
 
@@ -514,23 +551,32 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 		return assistantMsg, nil, fmt.Errorf("failed to create assistant message: %w", err)
 	}
 
+	allTools, toolsErr := a.getAllTools()
+	if toolsErr != nil {
+		return assistantMsg, nil, toolsErr
+	}
 	// Now collect tools (which may block on MCP initialization)
-	eventChan := a.provider.StreamResponse(ctx, msgHistory, slices.Collect(a.tools.Seq()))
+	eventChan := a.provider.StreamResponse(ctx, msgHistory, allTools)
 
 	// Add the session and message ID into the context if needed by tools.
 	ctx = context.WithValue(ctx, tools.MessageIDContextKey, assistantMsg.ID)
 
-	// Process each event in the stream.
-	for event := range eventChan {
-		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event); processErr != nil {
-			if errors.Is(processErr, context.Canceled) {
-				a.finishMessage(context.Background(), &assistantMsg, message.FinishReasonCanceled, "Request cancelled", "")
-			} else {
-				a.finishMessage(ctx, &assistantMsg, message.FinishReasonError, "API Error", processErr.Error())
+loop:
+	for {
+		select {
+		case event, ok := <-eventChan:
+			if !ok {
+				break loop
 			}
-			return assistantMsg, nil, processErr
-		}
-		if ctx.Err() != nil {
+			if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event); processErr != nil {
+				if errors.Is(processErr, context.Canceled) {
+					a.finishMessage(context.Background(), &assistantMsg, message.FinishReasonCanceled, "Request cancelled", "")
+				} else {
+					a.finishMessage(ctx, &assistantMsg, message.FinishReasonError, "API Error", processErr.Error())
+				}
+				return assistantMsg, nil, processErr
+			}
+		case <-ctx.Done():
 			a.finishMessage(context.Background(), &assistantMsg, message.FinishReasonCanceled, "Request cancelled", "")
 			return assistantMsg, nil, ctx.Err()
 		}
@@ -554,7 +600,8 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 		default:
 			// Continue processing
 			var tool tools.BaseTool
-			for availableTool := range a.tools.Seq() {
+			allTools, _ = a.getAllTools()
+			for _, availableTool := range allTools {
 				if availableTool.Info().Name == toolCall.Name {
 					tool = availableTool
 					break
@@ -699,13 +746,13 @@ func (a *agent) processEvent(ctx context.Context, sessionID string, assistantMsg
 		if err := a.messages.Update(ctx, *assistantMsg); err != nil {
 			return fmt.Errorf("failed to update message: %w", err)
 		}
-		return a.TrackUsage(ctx, sessionID, a.Model(), event.Response.Usage)
+		return a.trackUsage(ctx, sessionID, a.Model(), event.Response.Usage)
 	}
 
 	return nil
 }
 
-func (a *agent) TrackUsage(ctx context.Context, sessionID string, model catwalk.Model, usage provider.TokenUsage) error {
+func (a *agent) trackUsage(ctx context.Context, sessionID string, model catwalk.Model, usage provider.TokenUsage) error {
 	sess, err := a.sessions.Get(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
@@ -715,6 +762,8 @@ func (a *agent) TrackUsage(ctx context.Context, sessionID string, model catwalk.
 		model.CostPer1MOutCached/1e6*float64(usage.CacheReadTokens) +
 		model.CostPer1MIn/1e6*float64(usage.InputTokens) +
 		model.CostPer1MOut/1e6*float64(usage.OutputTokens)
+
+	a.eventTokensUsed(sessionID, usage, cost)
 
 	sess.Cost += cost
 	sess.CompletionTokens = usage.OutputTokens + usage.CacheReadTokens
@@ -811,7 +860,7 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 			if r.Error != nil {
 				event = AgentEvent{
 					Type:  AgentEventTypeError,
-					Error: fmt.Errorf("failed to summarize: %w", err),
+					Error: fmt.Errorf("failed to summarize: %w", r.Error),
 					Done:  true,
 				}
 				a.Publish(pubsub.CreatedEvent, event)
@@ -918,6 +967,12 @@ func (a *agent) CancelAll() {
 	}
 	for key := range a.activeRequests.Seq2() {
 		a.Cancel(key) // key is sessionID
+	}
+
+	for _, cleanup := range a.cleanupFuncs {
+		if cleanup != nil {
+			cleanup()
+		}
 	}
 
 	timeout := time.After(5 * time.Second)
@@ -1030,4 +1085,49 @@ func (a *agent) UpdateModel() error {
 	}
 
 	return nil
+}
+
+func (a *agent) setupEvents(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		subCh := SubscribeMCPEvents(ctx)
+
+		for {
+			select {
+			case event, ok := <-subCh:
+				if !ok {
+					slog.Debug("MCPEvents subscription channel closed")
+					return
+				}
+				switch event.Payload.Type {
+				case MCPEventToolsListChanged:
+					name := event.Payload.Name
+					c, ok := mcpClients.Get(name)
+					if !ok {
+						slog.Warn("MCP client not found for tools update", "name", name)
+						continue
+					}
+					cfg := config.Get()
+					tools, err := getTools(ctx, name, a.permissions, c, cfg.WorkingDir())
+					if err != nil {
+						slog.Error("error listing tools", "error", err)
+						updateMCPState(name, MCPStateError, err, nil, 0)
+						_ = c.Close()
+						continue
+					}
+					updateMcpTools(name, tools)
+					a.mcpTools.Reset(maps.Collect(mcpTools.Seq2()))
+					updateMCPState(name, MCPStateConnected, nil, c, a.mcpTools.Len())
+				default:
+					continue
+				}
+			case <-ctx.Done():
+				slog.Debug("MCPEvents subscription cancelled")
+				return
+			}
+		}
+	}()
+
+	a.cleanupFuncs = append(a.cleanupFuncs, cancel)
 }

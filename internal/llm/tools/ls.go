@@ -1,13 +1,16 @@
 package tools
 
 import (
+	"cmp"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/permission"
 )
@@ -15,11 +18,13 @@ import (
 type LSParams struct {
 	Path   string   `json:"path"`
 	Ignore []string `json:"ignore"`
+	Depth  int      `json:"depth"`
 }
 
 type LSPermissionsParams struct {
 	Path   string   `json:"path"`
 	Ignore []string `json:"ignore"`
+	Depth  int      `json:"depth"`
 }
 
 type TreeNode struct {
@@ -40,43 +45,12 @@ type lsTool struct {
 }
 
 const (
-	LSToolName    = "ls"
-	MaxLSFiles    = 1000
-	lsDescription = `Directory listing tool that shows files and subdirectories in a tree structure, helping you explore and understand the project organization.
-
-WHEN TO USE THIS TOOL:
-- Use when you need to explore the structure of a directory
-- Helpful for understanding the organization of a project
-- Good first step when getting familiar with a new codebase
-
-HOW TO USE:
-- Provide a path to list (defaults to current working directory)
-- Optionally specify glob patterns to ignore
-- Results are displayed in a tree structure
-
-FEATURES:
-- Displays a hierarchical view of files and directories
-- Automatically skips hidden files/directories (starting with '.')
-- Skips common system directories like __pycache__
-- Can filter out files matching specific patterns
-
-LIMITATIONS:
-- Results are limited to 1000 files
-- Very large directories will be truncated
-- Does not show file sizes or permissions
-- Cannot recursively list all directories in a large project
-
-WINDOWS NOTES:
-- Hidden file detection uses Unix convention (files starting with '.')
-- Windows-specific hidden files (with hidden attribute) are not automatically skipped
-- Common Windows directories like System32, Program Files are not in default ignore list
-- Path separators are handled automatically (both / and \ work)
-
-TIPS:
-- Use Glob tool for finding files by name patterns instead of browsing
-- Use Grep tool for searching file contents
-- Combine with other tools for more effective exploration`
+	LSToolName = "ls"
+	maxLSFiles = 1000
 )
+
+//go:embed ls.md
+var lsDescription []byte
 
 func NewLsTool(permissions permission.Service, workingDir string) BaseTool {
 	return &lsTool{
@@ -92,11 +66,15 @@ func (l *lsTool) Name() string {
 func (l *lsTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        LSToolName,
-		Description: lsDescription,
+		Description: string(lsDescription),
 		Parameters: map[string]any{
 			"path": map[string]any{
 				"type":        "string",
 				"description": "The path to the directory to list (defaults to current working directory)",
+			},
+			"depth": map[string]any{
+				"type":        "integer",
+				"description": "The maximum depth to traverse",
 			},
 			"ignore": map[string]any{
 				"type":        "array",
@@ -116,13 +94,7 @@ func (l *lsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 
-	searchPath := params.Path
-	if searchPath == "" {
-		searchPath = l.workingDir
-	}
-
-	var err error
-	searchPath, err = fsext.Expand(searchPath)
+	searchPath, err := fsext.Expand(cmp.Or(params.Path, l.workingDir))
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error expanding path: %w", err)
 	}
@@ -167,44 +139,49 @@ func (l *lsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 		}
 	}
 
-	output, err := ListDirectoryTree(searchPath, params.Ignore)
+	output, metadata, err := ListDirectoryTree(searchPath, params)
 	if err != nil {
 		return ToolResponse{}, err
 	}
 
-	// Get file count for metadata
-	files, truncated, err := fsext.ListDirectory(searchPath, params.Ignore, MaxLSFiles)
-	if err != nil {
-		return ToolResponse{}, fmt.Errorf("error listing directory for metadata: %w", err)
-	}
-
 	return WithResponseMetadata(
 		NewTextResponse(output),
-		LSResponseMetadata{
-			NumberOfFiles: len(files),
-			Truncated:     truncated,
-		},
+		metadata,
 	), nil
 }
 
-func ListDirectoryTree(searchPath string, ignore []string) (string, error) {
+func ListDirectoryTree(searchPath string, params LSParams) (string, LSResponseMetadata, error) {
 	if _, err := os.Stat(searchPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("path does not exist: %s", searchPath)
+		return "", LSResponseMetadata{}, fmt.Errorf("path does not exist: %s", searchPath)
 	}
 
-	files, truncated, err := fsext.ListDirectory(searchPath, ignore, MaxLSFiles)
+	ls := config.Get().Tools.Ls
+	depth, limit := ls.Limits()
+	maxFiles := min(limit, maxLSFiles)
+	files, truncated, err := fsext.ListDirectory(
+		searchPath,
+		params.Ignore,
+		cmp.Or(params.Depth, depth),
+		maxFiles,
+	)
 	if err != nil {
-		return "", fmt.Errorf("error listing directory: %w", err)
+		return "", LSResponseMetadata{}, fmt.Errorf("error listing directory: %w", err)
 	}
 
+	metadata := LSResponseMetadata{
+		NumberOfFiles: len(files),
+		Truncated:     truncated,
+	}
 	tree := createFileTree(files, searchPath)
-	output := printTree(tree, searchPath)
 
+	var output string
 	if truncated {
-		output = fmt.Sprintf("There are more than %d files in the directory. Use a more specific path or use the Glob tool to find specific files. The first %d files and directories are included below:\n\n%s", MaxLSFiles, MaxLSFiles, output)
+		output = fmt.Sprintf("There are more than %d files in the directory. Use a more specific path or use the Glob tool to find specific files. The first %[1]d files and directories are included below.\n", maxFiles)
 	}
-
-	return output, nil
+	if depth > 0 {
+		output = fmt.Sprintf("The directory tree is shown up to a depth of %d. Use a higher depth and a specific path to see more levels.\n", cmp.Or(params.Depth, depth))
+	}
+	return output + "\n" + printTree(tree, searchPath), metadata, nil
 }
 
 func createFileTree(sortedPaths []string, rootPath string) []*TreeNode {
