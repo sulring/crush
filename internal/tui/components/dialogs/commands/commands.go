@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"os"
 	"strings"
 
@@ -63,8 +62,6 @@ type commandDialogCmp struct {
 	selected     commandType // Selected SystemCommands or UserCommands
 	userCommands []Command   // User-defined commands
 	sessionID    string      // Current session ID
-	ctx          context.Context
-	cancel       context.CancelFunc
 }
 
 type (
@@ -141,9 +138,6 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return c, nil // No item selected, do nothing
 			}
 			command := (*selectedItem).Value()
-			if c.cancel != nil {
-				c.cancel()
-			}
 			return c, tea.Sequence(
 				util.CmdHandler(dialogs.CloseDialogMsg{}),
 				command.Handler(command),
@@ -154,9 +148,6 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return c, c.setCommandType(c.next())
 		case key.Matches(msg, c.keyMap.Close):
-			if c.cancel != nil {
-				c.cancel()
-			}
 			return c, util.CmdHandler(dialogs.CloseDialogMsg{})
 		default:
 			u, cmd := c.commandList.Update(msg)
