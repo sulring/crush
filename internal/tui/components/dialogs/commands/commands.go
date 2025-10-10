@@ -168,17 +168,10 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (c *commandDialogCmp) next() CommandType {
-	switch c.selected {
-	case SystemCommands:
-		if len(c.userCommands) > 0 {
-			return UserCommands
-		}
-		fallthrough
-	case UserCommands:
-		fallthrough
-	default:
-		return SystemCommands
+	if c.selected == SystemCommands {
+		return UserCommands
 	}
+	return SystemCommands
 }
 
 func (c *commandDialogCmp) View() string {
