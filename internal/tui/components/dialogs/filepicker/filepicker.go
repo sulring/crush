@@ -130,7 +130,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Get the path of the selected file.
 		return m, tea.Sequence(
 			util.CmdHandler(dialogs.CloseDialogMsg{}),
-			onPaste(resolveFS, path),
+			OnPaste(ResolveFS, path),
 		)
 	}
 	m.image, cmd = m.image.Update(msg)
@@ -138,11 +138,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func resolveFS(baseDirPath string) fs.FS {
+func ResolveFS(baseDirPath string) fs.FS {
 	return os.DirFS(baseDirPath)
 }
 
-func onPaste(resolveFsys func(path string) fs.FS, path string) func() tea.Msg {
+func OnPaste(resolveFsys func(path string) fs.FS, path string) func() tea.Msg {
 	fsys := resolveFsys(filepath.Dir(path))
 	name := filepath.Base(path)
 	return func() tea.Msg {

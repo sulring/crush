@@ -35,7 +35,7 @@ func TestOnPasteMockFSWithValidPath(t *testing.T) {
 	}
 
 	// Test with the first file
-	cmd := onPaste(resolveTestFS, makePathCanonical("/home/testuser/images/image1.png"))
+	cmd := OnPaste(resolveTestFS, makePathCanonical("/home/testuser/images/image1.png"))
 	msg := cmd()
 
 	assert.Equal(t, makePathCanonical("/home/testuser/images"), mockedFSPath)
@@ -61,7 +61,7 @@ func TestOnPasteMockFSWithInvalidPath(t *testing.T) {
 	}
 
 	// Test with the first file
-	cmd, ok := onPaste(resolveTestFS, makePathCanonical("/home/testuser/images/nonexistent.png"))().(tea.Cmd)
+	cmd, ok := OnPaste(resolveTestFS, makePathCanonical("/home/testuser/images/nonexistent.png"))().(tea.Cmd)
 	require.True(t, ok)
 
 	msg := cmd()
