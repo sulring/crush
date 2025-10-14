@@ -649,7 +649,7 @@ func (m *editorCmp) handleMessageHistory(msg tea.KeyMsg) string {
 	return userMessages[m.promptHistoryIndex]
 }
 
-func New(app *app.App) Editor {
+func newTextArea() *textarea.Model {
 	t := styles.CurrentTheme()
 	ta := textarea.New()
 	ta.SetStyles(t.S().TextArea)
