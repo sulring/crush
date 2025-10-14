@@ -93,7 +93,10 @@ type grepTool struct {
 	workingDir string
 }
 
-const GrepToolName = "grep"
+const (
+	GrepToolName        = "grep"
+	maxGrepContentWidth = 500
+)
 
 //go:embed grep.md
 var grepDescription []byte
@@ -188,7 +191,11 @@ func (g *grepTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 				fmt.Fprintf(&output, "%s:\n", match.path)
 			}
 			if match.lineNum > 0 {
-				fmt.Fprintf(&output, "  Line %d: %s\n", match.lineNum, match.lineText)
+				lineText := match.lineText
+				if len(lineText) > maxGrepContentWidth {
+					lineText = lineText[:maxGrepContentWidth] + "..."
+				}
+				fmt.Fprintf(&output, "  Line %d: %s\n", match.lineNum, lineText)
 			} else {
 				fmt.Fprintf(&output, "  %s\n", match.path)
 			}
