@@ -653,19 +653,15 @@ func (m *editorCmp) stepOverHistory(resolveHistoricMessages func(context.Context
 		return messageHistory[0]
 	}
 
+	// the first time we invoke scroll we need to start from top of the list
 	if !m.previouslyScrollingPromptHistory {
 		m.promptHistoryIndex = len(messageHistory) - 1
 		m.previouslyScrollingPromptHistory = true
 	}
 
-	defer func() {
-		if !m.scrollingPromptHistory {
-			m.scrollingPromptHistory = m.promptHistoryIndex < len(messageHistory)-2
-		}
-	}()
-
 	switch resolveDirection() {
 	case previous:
+		m.scrollingPromptHistory = true
 		return m.stepBack(messageHistory)
 	case next:
 		return m.stepForward(messageHistory)
@@ -683,12 +679,12 @@ func (m *editorCmp) stepBack(history []string) string {
 
 func (m *editorCmp) stepForward(history []string) string {
 	m.promptHistoryIndex += 1
-	if m.promptHistoryIndex > len(history)-1 {
-		offset := 1
-		if m.scrollingPromptHistory {
-			offset = 2
-		}
-		m.promptHistoryIndex = len(history) - offset
+	maxIndex := len(history) - 1
+	if m.scrollingPromptHistory {
+		maxIndex = len(history) - 2
+	}
+	if m.promptHistoryIndex > maxIndex {
+		m.promptHistoryIndex = maxIndex
 	}
 	return history[m.promptHistoryIndex]
 }
