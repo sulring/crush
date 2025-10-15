@@ -703,32 +703,6 @@ func (m *editorCmp) resetHistory() {
 	m.scrollingPromptHistory = false
 }
 
-func (m *editorCmp) handleMessageHistory(msg tea.KeyMsg) string {
-	ctx := context.Background()
-	userMessages, err := m.getUserMessagesAsText(ctx)
-	if err != nil {
-		return "" // Do nothing.
-	}
-	userMessages = append(userMessages, "") // Give the user a reset option.
-	if len(userMessages) > 0 {
-		if key.Matches(msg, m.keyMap.Previous) {
-			if m.promptHistoryIndex == 0 {
-				m.promptHistoryIndex = len(userMessages) - 1
-			} else {
-				m.promptHistoryIndex -= 1
-			}
-		}
-		if key.Matches(msg, m.keyMap.Next) {
-			if m.promptHistoryIndex == len(userMessages)-1 {
-				m.promptHistoryIndex = 0
-			} else {
-				m.promptHistoryIndex += 1
-			}
-		}
-	}
-	return userMessages[m.promptHistoryIndex]
-}
-
 func newTextArea() *textarea.Model {
 	t := styles.CurrentTheme()
 	ta := textarea.New()
