@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -19,23 +18,17 @@ const (
 	userAgent    = "crush/1.0"
 )
 
-// Release represents a GitHub release.
-type Release struct {
-	TagName string `json:"tag_name"`
-	HTMLURL string `json:"html_url"`
-}
-
-// UpdateInfo contains information about an available update.
-type UpdateInfo struct {
+// Info contains information about an available update.
+type Info struct {
 	CurrentVersion string
 	LatestVersion  string
 	ReleaseURL     string
 	Available      bool
 }
 
-// CheckForUpdate checks if a new version is available.
-func CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
-	info := &UpdateInfo{
+// Check checks if a new version is available.
+func Check(ctx context.Context) (*Info, error) {
+	info := &Info{
 		CurrentVersion: version.Version,
 	}
 
@@ -62,8 +55,14 @@ func CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 	return info, nil
 }
 
+// githubRelease represents a GitHub release.
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+	HTMLURL string `json:"html_url"`
+}
+
 // fetchLatestRelease fetches the latest release information from GitHub.
-func fetchLatestRelease(ctx context.Context) (*Release, error) {
+func fetchLatestRelease(ctx context.Context) (*githubRelease, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
@@ -86,35 +85,10 @@ func fetchLatestRelease(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var release Release
+	var release githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return nil, err
 	}
 
 	return &release, nil
-}
-
-// CheckForUpdateAsync performs an update check in the background and returns immediately.
-// If an update is available, it returns the update info through the channel.
-func CheckForUpdateAsync(ctx context.Context, dataDir string) <-chan *UpdateInfo {
-	ch := make(chan *UpdateInfo, 1)
-
-	go func() {
-		defer close(ch)
-
-		// Perform the check.
-		info, err := CheckForUpdate(ctx)
-		if err != nil {
-			// Log error but don't fail.
-			fmt.Fprintf(os.Stderr, "Failed to check for updates: %v\n", err)
-			return
-		}
-
-		// Send update info if available.
-		if info.Available {
-			ch <- info
-		}
-	}()
-
-	return ch
 }

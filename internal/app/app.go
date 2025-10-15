@@ -348,26 +348,16 @@ func (app *App) Shutdown() {
 	}
 }
 
-// checkForUpdates checks for available updates in the background.
+// checkForUpdates checks for available updates.
 func (app *App) checkForUpdates(ctx context.Context) {
-	// Use a timeout to avoid hanging indefinitely.
-	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-
-	// Check for updates asynchronously.
-	updateCh := update.CheckForUpdateAsync(checkCtx, app.config.Options.DataDirectory)
-
-	select {
-	case info := <-updateCh:
-		if info != nil && info.Available {
-			// Send update notification through the event system.
-			app.events <- pubsub.UpdateAvailableMsg{
-				CurrentVersion: info.CurrentVersion,
-				LatestVersion:  info.LatestVersion,
-			}
-		}
-	case <-checkCtx.Done():
-		// Timeout or context cancelled.
+	info, err := update.Check(checkCtx)
+	if err != nil || info == nil || !info.Available {
 		return
+	}
+	app.events <- pubsub.UpdateAvailableMsg{
+		CurrentVersion: info.CurrentVersion,
+		LatestVersion:  info.LatestVersion,
 	}
 }
