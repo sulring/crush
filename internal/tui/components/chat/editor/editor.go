@@ -622,6 +622,8 @@ func (m *editorCmp) getUserMessagesAsText(ctx context.Context) ([]string, error)
 			userMessages = append(userMessages, msg.Content().Text)
 		}
 	}
+
+	userMessages = append(userMessages, m.textarea.Value())
 	return userMessages, nil
 }
 
@@ -680,9 +682,6 @@ func (m *editorCmp) stepBack(history []string) string {
 func (m *editorCmp) stepForward(history []string) string {
 	m.promptHistoryIndex += 1
 	maxIndex := len(history) - 1
-	if m.scrollingPromptHistory {
-		maxIndex = len(history) - 2
-	}
 	if m.promptHistoryIndex > maxIndex {
 		m.promptHistoryIndex = maxIndex
 	}
