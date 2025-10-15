@@ -74,7 +74,9 @@ type editorCmp struct {
 	completionsStartIndex int
 	isCompletionsOpen     bool
 
-	promptHistoryIndex int
+	previouslyScrollingPromptHistory bool
+	scrollingPromptHistory           bool
+	promptHistoryIndex               int
 }
 
 var DeleteKeyMaps = DeleteAttachmentKeyMaps{
@@ -349,7 +351,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// History
 		if key.Matches(msg, m.keyMap.Previous) || key.Matches(msg, m.keyMap.Next) {
-			m.textarea.SetValue(m.handleMessageHistory(msg))
+			m.textarea.SetValue(m.stepOverHistory(m.getUserMessagesAsText, m.getDirectionFromKey(msg)))
 		}
 		// Handle Enter key
 		if m.textarea.Focused() && key.Matches(msg, m.keyMap.SendMessage) {
@@ -621,6 +623,68 @@ func (m *editorCmp) getUserMessagesAsText(ctx context.Context) ([]string, error)
 		}
 	}
 	return userMessages, nil
+}
+
+type direction int
+
+const (
+	previous = iota
+	next
+)
+
+func (m *editorCmp) getDirectionFromKey(msg tea.KeyPressMsg) func() direction {
+	return func() direction {
+		if key.Matches(msg, m.keyMap.Previous) {
+			return previous
+		}
+		return next
+	}
+}
+
+func (m *editorCmp) stepOverHistory(resolveHistoricMessages func(context.Context) ([]string, error), resolveDirection func() direction) string {
+	// NOTE(tauraamui): the last entry in this list will be the current contents of the input field/box
+	messageHistory, err := resolveHistoricMessages(context.Background())
+	if err != nil {
+		return ""
+	}
+
+	// the list will/should always have at least the current message in the input in the list
+	if len(messageHistory) == 1 {
+		return messageHistory[0]
+	}
+
+	if !m.previouslyScrollingPromptHistory {
+		m.promptHistoryIndex = len(messageHistory) - 1
+		m.previouslyScrollingPromptHistory = true
+	}
+
+	defer func() {
+		m.scrollingPromptHistory = m.promptHistoryIndex < len(messageHistory)-1
+	}()
+
+	switch resolveDirection() {
+	case previous:
+		return m.stepBack(messageHistory)
+	case next:
+		return m.stepForward(messageHistory)
+	}
+	return ""
+}
+
+func (m *editorCmp) stepBack(history []string) string {
+	m.promptHistoryIndex -= 1
+	if m.promptHistoryIndex < 0 {
+		m.promptHistoryIndex = 0
+	}
+	return history[m.promptHistoryIndex]
+}
+
+func (m *editorCmp) stepForward(history []string) string {
+	m.promptHistoryIndex += 1
+	if m.promptHistoryIndex >= len(history)-1 {
+		m.promptHistoryIndex = len(history) - 1
+	}
+	return history[m.promptHistoryIndex]
 }
 
 func (m *editorCmp) handleMessageHistory(msg tea.KeyMsg) string {
