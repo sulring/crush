@@ -194,26 +194,57 @@ func (m *mockRgExecCmd) Output() ([]byte, error) {
 }
 
 func TestSearchWithRipGrepButItFailsToRunHandleError(t *testing.T) {
-	// create separate proc state that exits with code 1
-	cmd := exec.Command("sh", "-c", "exit 1")
-	err := cmd.Run()
-	require.Error(t, err)
-
-	// Extract the ExitError with real ProcessState.
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(t, ok)
-	require.Equal(t, 1, exitErr.ExitCode())
-
-	mockRgCmd := mockRgExecCmd{
-		err: exitErr,
+	tests := []struct {
+		name          string
+		err           error
+		expectMatches bool
+		expectError   bool
+	}{
+		{
+			name: "exit code 1 returns no matches and no error",
+			err: func() error {
+				cmd := exec.Command("sh", "-c", "exit 1")
+				err := cmd.Run()
+				require.Error(t, err)
+				exitErr, ok := err.(*exec.ExitError)
+				require.True(t, ok)
+				require.Equal(t, 1, exitErr.ExitCode())
+				return exitErr
+			}(),
+			expectMatches: false,
+			expectError:   false,
+		},
+		{
+			name:          "non-exit error returns error",
+			err:           os.ErrPermission,
+			expectMatches: false,
+			expectError:   true,
+		},
 	}
 
-	matches, err := searchWithRipgrep(t.Context(), func(ctx context.Context, pattern, path, include string) execCmd {
-		return &mockRgCmd
-	}, "", "", "")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRgCmd := mockRgExecCmd{
+				err: tt.err,
+			}
 
-	require.Empty(t, matches)
-	require.NoError(t, err)
+			matches, err := searchWithRipgrep(t.Context(), func(ctx context.Context, pattern, path, include string) execCmd {
+				return &mockRgCmd
+			}, "", "", "")
+
+			if tt.expectMatches {
+				require.NotEmpty(t, matches)
+			} else {
+				require.Empty(t, matches)
+			}
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 // Benchmark to show performance improvement
