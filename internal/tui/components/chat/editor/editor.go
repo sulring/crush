@@ -659,7 +659,9 @@ func (m *editorCmp) stepOverHistory(resolveHistoricMessages func(context.Context
 	}
 
 	defer func() {
-		m.scrollingPromptHistory = m.promptHistoryIndex < len(messageHistory)-1
+		if !m.scrollingPromptHistory {
+			m.scrollingPromptHistory = m.promptHistoryIndex < len(messageHistory)-2
+		}
 	}()
 
 	switch resolveDirection() {
@@ -681,8 +683,12 @@ func (m *editorCmp) stepBack(history []string) string {
 
 func (m *editorCmp) stepForward(history []string) string {
 	m.promptHistoryIndex += 1
-	if m.promptHistoryIndex >= len(history)-1 {
-		m.promptHistoryIndex = len(history) - 1
+	if m.promptHistoryIndex > len(history)-1 {
+		offset := 1
+		if m.scrollingPromptHistory {
+			offset = 2
+		}
+		m.promptHistoryIndex = len(history) - offset
 	}
 	return history[m.promptHistoryIndex]
 }
