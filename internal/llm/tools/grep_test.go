@@ -2,11 +2,13 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -243,6 +245,65 @@ func TestSearchWithRipGrepButItFailsToRunHandleError(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestSearchFilesWithLimit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		limit             int
+		numMatches        int
+		expectedMatches   int
+		expectedTruncated bool
+	}{
+		{
+			name:              "limit of 100 truncates 150 results",
+			limit:             100,
+			numMatches:        150,
+			expectedMatches:   100,
+			expectedTruncated: true,
+		},
+		{
+			name:              "limit of 200 does not truncate 150 results",
+			limit:             200,
+			numMatches:        150,
+			expectedMatches:   150,
+			expectedTruncated: false,
+		},
+		{
+			name:              "limit of 150 exactly matches all files",
+			limit:             150,
+			numMatches:        150,
+			expectedMatches:   150,
+			expectedTruncated: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create mock ripgrep search that returns fake matches.
+			mockRipgrepSearch := func(ctx context.Context, rgSearchCmd resolveRgSearchCmd, pattern, path, include string) ([]grepMatch, error) {
+				matches := make([]grepMatch, tt.numMatches)
+				for i := 0; i < tt.numMatches; i++ {
+					matches[i] = grepMatch{
+						path:     fmt.Sprintf("/fake/path/file%03d.txt", i),
+						modTime:  time.Now().Add(-time.Duration(i) * time.Minute),
+						lineNum:  1,
+						lineText: "test pattern",
+					}
+				}
+				return matches, nil
+			}
+
+			matches, truncated, err := searchFiles(t.Context(), mockRipgrepSearch, "test pattern", "/fake/path", "", tt.limit)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedMatches, len(matches))
+			require.Equal(t, tt.expectedTruncated, truncated)
 		})
 	}
 }
