@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/charmbracelet/crush/internal/version"
 )
 
@@ -38,8 +39,9 @@ func CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 		CurrentVersion: version.Version,
 	}
 
-	// Skip update check for development versions.
-	if strings.Contains(version.Version, "unknown") {
+	cv, err := semver.NewVersion(version.Version)
+	if err != nil {
+		// its devel, unknown, etc
 		return info, nil
 	}
 
@@ -48,13 +50,14 @@ func CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 		return nil, fmt.Errorf("failed to fetch latest release: %w", err)
 	}
 
+	lv, err := semver.NewVersion(release.TagName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse latest version: %w", err)
+	}
+
 	info.LatestVersion = strings.TrimPrefix(release.TagName, "v")
 	info.ReleaseURL = release.HTMLURL
-
-	// Compare versions.
-	if compareVersions(info.CurrentVersion, info.LatestVersion) < 0 {
-		info.Available = true
-	}
+	info.Available = lv.GreaterThan(cv)
 
 	return info, nil
 }
@@ -89,40 +92,6 @@ func fetchLatestRelease(ctx context.Context) (*Release, error) {
 	}
 
 	return &release, nil
-}
-
-// compareVersions compares two semantic versions.
-// Returns -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2.
-func compareVersions(v1, v2 string) int {
-	// Remove 'v' prefix if present.
-	v1 = strings.TrimPrefix(v1, "v")
-	v2 = strings.TrimPrefix(v2, "v")
-
-	// Split versions into parts.
-	parts1 := strings.Split(v1, ".")
-	parts2 := strings.Split(v2, ".")
-
-	// Compare each part.
-	for i := 0; i < len(parts1) && i < len(parts2); i++ {
-		var n1, n2 int
-		fmt.Sscanf(parts1[i], "%d", &n1)
-		fmt.Sscanf(parts2[i], "%d", &n2)
-
-		if n1 < n2 {
-			return -1
-		} else if n1 > n2 {
-			return 1
-		}
-	}
-
-	// If all parts are equal, compare lengths.
-	if len(parts1) < len(parts2) {
-		return -1
-	} else if len(parts1) > len(parts2) {
-		return 1
-	}
-
-	return 0
 }
 
 // CheckForUpdateAsync performs an update check in the background and returns immediately.
