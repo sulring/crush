@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
-	"slices"
+	"net/http"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -20,9 +22,7 @@ import (
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/version"
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/client/transport"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // MCPState represents the current state of an MCP client
@@ -54,7 +54,8 @@ func (s MCPState) String() string {
 type MCPEventType string
 
 const (
-	MCPEventStateChanged MCPEventType = "state_changed"
+	MCPEventStateChanged     MCPEventType = "state_changed"
+	MCPEventToolsListChanged MCPEventType = "tools_list_changed"
 )
 
 // MCPEvent represents an event in the MCP system
@@ -71,22 +72,23 @@ type MCPClientInfo struct {
 	Name        string
 	State       MCPState
 	Error       error
-	Client      *client.Client
+	Client      *mcp.ClientSession
 	ToolCount   int
 	ConnectedAt time.Time
 }
 
 var (
-	mcpToolsOnce sync.Once
-	mcpTools     []tools.BaseTool
-	mcpClients   = csync.NewMap[string, *client.Client]()
-	mcpStates    = csync.NewMap[string, MCPClientInfo]()
-	mcpBroker    = pubsub.NewBroker[MCPEvent]()
+	mcpToolsOnce    sync.Once
+	mcpTools        = csync.NewMap[string, tools.BaseTool]()
+	mcpClient2Tools = csync.NewMap[string, []tools.BaseTool]()
+	mcpClients      = csync.NewMap[string, *mcp.ClientSession]()
+	mcpStates       = csync.NewMap[string, MCPClientInfo]()
+	mcpBroker       = pubsub.NewBroker[MCPEvent]()
 )
 
 type McpTool struct {
 	mcpName     string
-	tool        mcp.Tool
+	tool        *mcp.Tool
 	permissions permission.Service
 	workingDir  string
 }
@@ -96,14 +98,9 @@ func (b *McpTool) Name() string {
 }
 
 func (b *McpTool) Info() tools.ToolInfo {
-	required := b.tool.InputSchema.Required
-	if required == nil {
-		required = make([]string, 0)
-	}
-	parameters := b.tool.InputSchema.Properties
-	if parameters == nil {
-		parameters = make(map[string]any)
-	}
+	input := b.tool.InputSchema.(map[string]any)
+	required, _ := input["required"].([]string)
+	parameters, _ := input["properties"].(map[string]any)
 	return tools.ToolInfo{
 		Name:        fmt.Sprintf("mcp_%s_%s", b.mcpName, b.tool.Name),
 		Description: b.tool.Description,
@@ -122,11 +119,9 @@ func runTool(ctx context.Context, name, toolName string, input string) (tools.To
 	if err != nil {
 		return tools.NewTextErrorResponse(err.Error()), nil
 	}
-	result, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      toolName,
-			Arguments: args,
-		},
+	result, err := c.CallTool(ctx, &mcp.CallToolParams{
+		Name:      toolName,
+		Arguments: args,
 	})
 	if err != nil {
 		return tools.NewTextErrorResponse(err.Error()), nil
@@ -134,8 +129,8 @@ func runTool(ctx context.Context, name, toolName string, input string) (tools.To
 
 	output := make([]string, 0, len(result.Content))
 	for _, v := range result.Content {
-		if v, ok := v.(mcp.TextContent); ok {
-			output = append(output, v.Text)
+		if vv, ok := v.(*mcp.TextContent); ok {
+			output = append(output, vv.Text)
 		} else {
 			output = append(output, fmt.Sprintf("%v", v))
 		}
@@ -143,8 +138,8 @@ func runTool(ctx context.Context, name, toolName string, input string) (tools.To
 	return tools.NewTextResponse(strings.Join(output, "\n")), nil
 }
 
-func getOrRenewClient(ctx context.Context, name string) (*client.Client, error) {
-	c, ok := mcpClients.Get(name)
+func getOrRenewClient(ctx context.Context, name string) (*mcp.ClientSession, error) {
+	sess, ok := mcpClients.Get(name)
 	if !ok {
 		return nil, fmt.Errorf("mcp '%s' not available", name)
 	}
@@ -156,20 +151,20 @@ func getOrRenewClient(ctx context.Context, name string) (*client.Client, error) 
 	timeout := mcpTimeout(m)
 	pingCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	err := c.Ping(pingCtx)
+	err := sess.Ping(pingCtx, nil)
 	if err == nil {
-		return c, nil
+		return sess, nil
 	}
 	updateMCPState(name, MCPStateError, maybeTimeoutErr(err, timeout), nil, state.ToolCount)
 
-	c, err = createAndInitializeClient(ctx, name, m, cfg.Resolver())
+	sess, err = createMCPSession(ctx, name, m, cfg.Resolver())
 	if err != nil {
 		return nil, err
 	}
 
-	updateMCPState(name, MCPStateConnected, nil, c, state.ToolCount)
-	mcpClients.Set(name, c)
-	return c, nil
+	updateMCPState(name, MCPStateConnected, nil, sess, state.ToolCount)
+	mcpClients.Set(name, sess)
+	return sess, nil
 }
 
 func (b *McpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolResponse, error) {
@@ -196,8 +191,8 @@ func (b *McpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 	return runTool(ctx, b.mcpName, b.tool.Name, params.Input)
 }
 
-func getTools(ctx context.Context, name string, permissions permission.Service, c *client.Client, workingDir string) ([]tools.BaseTool, error) {
-	result, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+func getTools(ctx context.Context, name string, permissions permission.Service, c *mcp.ClientSession, workingDir string) ([]tools.BaseTool, error) {
+	result, err := c.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +224,7 @@ func GetMCPState(name string) (MCPClientInfo, bool) {
 }
 
 // updateMCPState updates the state of an MCP client and publishes an event
-func updateMCPState(name string, state MCPState, err error, client *client.Client, toolCount int) {
+func updateMCPState(name string, state MCPState, err error, client *mcp.ClientSession, toolCount int) {
 	info := MCPClientInfo{
 		Name:      name,
 		State:     state,
@@ -237,8 +232,12 @@ func updateMCPState(name string, state MCPState, err error, client *client.Clien
 		Client:    client,
 		ToolCount: toolCount,
 	}
-	if state == MCPStateConnected {
+	switch state {
+	case MCPStateConnected:
 		info.ConnectedAt = time.Now()
+	case MCPStateError:
+		updateMcpTools(name, nil)
+		mcpClients.Del(name)
 	}
 	mcpStates.Set(name, info)
 
@@ -256,7 +255,10 @@ func updateMCPState(name string, state MCPState, err error, client *client.Clien
 func CloseMCPClients() error {
 	var errs []error
 	for name, c := range mcpClients.Seq2() {
-		if err := c.Close(); err != nil {
+		if err := c.Close(); err != nil &&
+			!errors.Is(err, io.EOF) &&
+			!errors.Is(err, context.Canceled) &&
+			err.Error() != "signal: killed" {
 			errs = append(errs, fmt.Errorf("close mcp: %s: %w", name, err))
 		}
 	}
@@ -264,20 +266,8 @@ func CloseMCPClients() error {
 	return errors.Join(errs...)
 }
 
-var mcpInitRequest = mcp.InitializeRequest{
-	Params: mcp.InitializeParams{
-		ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
-		ClientInfo: mcp.Implementation{
-			Name:    "Crush",
-			Version: version.Version,
-		},
-	},
-}
-
-func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *config.Config) []tools.BaseTool {
+func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *config.Config) {
 	var wg sync.WaitGroup
-	result := csync.NewSlice[tools.BaseTool]()
-
 	// Initialize states for all configured MCPs
 	for name, m := range cfg.MCP {
 		if m.Disabled {
@@ -311,10 +301,12 @@ func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *con
 			ctx, cancel := context.WithTimeout(ctx, mcpTimeout(m))
 			defer cancel()
 
-			c, err := createAndInitializeClient(ctx, name, m, cfg.Resolver())
+			c, err := createMCPSession(ctx, name, m, cfg.Resolver())
 			if err != nil {
 				return
 			}
+
+			mcpClients.Set(name, c)
 
 			tools, err := getTools(ctx, name, permissions, c, cfg.WorkingDir())
 			if err != nil {
@@ -324,45 +316,68 @@ func doGetMCPTools(ctx context.Context, permissions permission.Service, cfg *con
 				return
 			}
 
+			updateMcpTools(name, tools)
 			mcpClients.Set(name, c)
 			updateMCPState(name, MCPStateConnected, nil, c, len(tools))
-			result.Append(tools...)
 		}(name, m)
 	}
 	wg.Wait()
-	return slices.Collect(result.Seq())
 }
 
-func createAndInitializeClient(ctx context.Context, name string, m config.MCPConfig, resolver config.VariableResolver) (*client.Client, error) {
-	c, err := createMcpClient(name, m, resolver)
+// updateMcpTools updates the global mcpTools and mcpClient2Tools maps
+func updateMcpTools(mcpName string, tools []tools.BaseTool) {
+	if len(tools) == 0 {
+		mcpClient2Tools.Del(mcpName)
+	} else {
+		mcpClient2Tools.Set(mcpName, tools)
+	}
+	for _, tools := range mcpClient2Tools.Seq2() {
+		for _, t := range tools {
+			mcpTools.Set(t.Name(), t)
+		}
+	}
+}
+
+func createMCPSession(ctx context.Context, name string, m config.MCPConfig, resolver config.VariableResolver) (*mcp.ClientSession, error) {
+	timeout := mcpTimeout(m)
+	mcpCtx, cancel := context.WithCancel(ctx)
+	cancelTimer := time.AfterFunc(timeout, cancel)
+
+	transport, err := createMCPTransport(mcpCtx, m, resolver)
 	if err != nil {
 		updateMCPState(name, MCPStateError, err, nil, 0)
 		slog.Error("error creating mcp client", "error", err, "name", name)
 		return nil, err
 	}
 
-	// XXX: ideally we should be able to use context.WithTimeout here, but,
-	// the SSE MCP client will start failing once that context is canceled.
-	timeout := mcpTimeout(m)
-	mcpCtx, cancel := context.WithCancel(ctx)
-	cancelTimer := time.AfterFunc(timeout, cancel)
-	if err := c.Start(mcpCtx); err != nil {
+	client := mcp.NewClient(
+		&mcp.Implementation{
+			Name:    "crush",
+			Version: version.Version,
+			Title:   "Crush",
+		},
+		&mcp.ClientOptions{
+			ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
+				mcpBroker.Publish(pubsub.UpdatedEvent, MCPEvent{
+					Type: MCPEventToolsListChanged,
+					Name: name,
+				})
+			},
+			KeepAlive: time.Minute * 10,
+		},
+	)
+
+	session, err := client.Connect(mcpCtx, transport, nil)
+	if err != nil {
 		updateMCPState(name, MCPStateError, maybeTimeoutErr(err, timeout), nil, 0)
 		slog.Error("error starting mcp client", "error", err, "name", name)
-		_ = c.Close()
 		cancel()
 		return nil, err
 	}
-	if _, err := c.Initialize(mcpCtx, mcpInitRequest); err != nil {
-		updateMCPState(name, MCPStateError, maybeTimeoutErr(err, timeout), nil, 0)
-		slog.Error("error initializing mcp client", "error", err, "name", name)
-		_ = c.Close()
-		cancel()
-		return nil, err
-	}
+
 	cancelTimer.Stop()
 	slog.Info("Initialized mcp client", "name", name)
-	return c, nil
+	return session, nil
 }
 
 func maybeTimeoutErr(err error, timeout time.Duration) error {
@@ -372,7 +387,7 @@ func maybeTimeoutErr(err error, timeout time.Duration) error {
 	return err
 }
 
-func createMcpClient(name string, m config.MCPConfig, resolver config.VariableResolver) (*client.Client, error) {
+func createMCPTransport(ctx context.Context, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
 	switch m.Type {
 	case config.MCPStdio:
 		command, err := resolver.ResolveValue(m.Command)
@@ -382,44 +397,51 @@ func createMcpClient(name string, m config.MCPConfig, resolver config.VariableRe
 		if strings.TrimSpace(command) == "" {
 			return nil, fmt.Errorf("mcp stdio config requires a non-empty 'command' field")
 		}
-		return client.NewStdioMCPClientWithOptions(
-			home.Long(command),
-			m.ResolvedEnv(),
-			m.Args,
-			transport.WithCommandLogger(mcpLogger{name: name}),
-		)
+		cmd := exec.CommandContext(ctx, home.Long(command), m.Args...)
+		cmd.Env = m.ResolvedEnv()
+		return &mcp.CommandTransport{
+			Command: cmd,
+		}, nil
 	case config.MCPHttp:
 		if strings.TrimSpace(m.URL) == "" {
 			return nil, fmt.Errorf("mcp http config requires a non-empty 'url' field")
 		}
-		return client.NewStreamableHttpClient(
-			m.URL,
-			transport.WithHTTPHeaders(m.ResolvedHeaders()),
-			transport.WithHTTPLogger(mcpLogger{name: name}),
-		)
-	case config.MCPSse:
+		client := &http.Client{
+			Transport: &headerRoundTripper{
+				headers: m.ResolvedHeaders(),
+			},
+		}
+		return &mcp.StreamableClientTransport{
+			Endpoint:   m.URL,
+			HTTPClient: client,
+		}, nil
+	case config.MCPSSE:
 		if strings.TrimSpace(m.URL) == "" {
 			return nil, fmt.Errorf("mcp sse config requires a non-empty 'url' field")
 		}
-		return client.NewSSEMCPClient(
-			m.URL,
-			client.WithHeaders(m.ResolvedHeaders()),
-			transport.WithSSELogger(mcpLogger{name: name}),
-		)
+		client := &http.Client{
+			Transport: &headerRoundTripper{
+				headers: m.ResolvedHeaders(),
+			},
+		}
+		return &mcp.SSEClientTransport{
+			Endpoint:   m.URL,
+			HTTPClient: client,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported mcp type: %s", m.Type)
 	}
 }
 
-// for MCP's clients.
-type mcpLogger struct{ name string }
-
-func (l mcpLogger) Errorf(format string, v ...any) {
-	slog.Error(fmt.Sprintf(format, v...), "name", l.name)
+type headerRoundTripper struct {
+	headers map[string]string
 }
 
-func (l mcpLogger) Infof(format string, v ...any) {
-	slog.Info(fmt.Sprintf(format, v...), "name", l.name)
+func (rt headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for k, v := range rt.headers {
+		req.Header.Set(k, v)
+	}
+	return http.DefaultTransport.RoundTrip(req)
 }
 
 func mcpTimeout(m config.MCPConfig) time.Duration {
