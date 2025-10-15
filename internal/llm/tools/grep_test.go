@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -87,7 +89,7 @@ func TestGrepWithIgnoreFiles(t *testing.T) {
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
 		"regex": searchFilesWithRegex,
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
-			return searchWithRipgrep(t.Context(), pattern, path, include)
+			return searchWithRipgrep(t.Context(), getRgSearchCmd, pattern, path, include)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -147,7 +149,7 @@ func TestSearchImplementations(t *testing.T) {
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
 		"regex": searchFilesWithRegex,
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
-			return searchWithRipgrep(t.Context(), pattern, path, include)
+			return searchWithRipgrep(t.Context(), getRgSearchCmd, pattern, path, include)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -173,6 +175,45 @@ func TestSearchImplementations(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockRgExecCmd struct {
+	args []string
+	err  error
+}
+
+func (m *mockRgExecCmd) AddArgs(args ...string) {
+	m.args = append(m.args, args...)
+}
+
+func (m *mockRgExecCmd) Output() ([]byte, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return []byte{}, nil
+}
+
+func TestSearchWithRipGrepButItFailsToRunHandleError(t *testing.T) {
+	// create separate proc state that exits with code 1
+	cmd := exec.Command("sh", "-c", "exit 1")
+	err := cmd.Run()
+	require.Error(t, err)
+
+	// Extract the ExitError with real ProcessState.
+	exitErr, ok := err.(*exec.ExitError)
+	require.True(t, ok)
+	require.Equal(t, 1, exitErr.ExitCode())
+
+	mockRgCmd := mockRgExecCmd{
+		err: exitErr,
+	}
+
+	matches, err := searchWithRipgrep(t.Context(), func(ctx context.Context, pattern, path, include string) execCmd {
+		return &mockRgCmd
+	}, "", "", "")
+
+	require.Empty(t, matches)
+	require.NoError(t, err)
 }
 
 // Benchmark to show performance improvement
