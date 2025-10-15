@@ -77,6 +77,7 @@ type editorCmp struct {
 	previouslyScrollingPromptHistory bool
 	scrollingPromptHistory           bool
 	promptHistoryIndex               int
+	historyCache                     []string
 }
 
 var DeleteKeyMaps = DeleteAttachmentKeyMaps{
@@ -148,6 +149,9 @@ func (m *editorCmp) Init() tea.Cmd {
 }
 
 func (m *editorCmp) send() tea.Cmd {
+	defer func() {
+		m.resetHistory()
+	}()
 	value := m.textarea.Value()
 	value = strings.TrimSpace(value)
 
@@ -611,6 +615,9 @@ func yoloPromptFunc(info textarea.PromptInfo) string {
 }
 
 func (m *editorCmp) getUserMessagesAsText(ctx context.Context) ([]string, error) {
+	if len(m.historyCache) > 0 {
+		return m.historyCache, nil
+	}
 	allMessages, err := m.app.Messages.List(ctx, m.session.ID)
 	if err != nil {
 		return nil, err
@@ -624,6 +631,7 @@ func (m *editorCmp) getUserMessagesAsText(ctx context.Context) ([]string, error)
 	}
 
 	userMessages = append(userMessages, m.textarea.Value())
+	m.historyCache = userMessages
 	return userMessages, nil
 }
 
@@ -686,6 +694,13 @@ func (m *editorCmp) stepForward(history []string) string {
 		m.promptHistoryIndex = maxIndex
 	}
 	return history[m.promptHistoryIndex]
+}
+
+func (m *editorCmp) resetHistory() {
+	m.historyCache = nil
+	m.promptHistoryIndex = 0
+	m.previouslyScrollingPromptHistory = false
+	m.scrollingPromptHistory = false
 }
 
 func (m *editorCmp) handleMessageHistory(msg tea.KeyMsg) string {
