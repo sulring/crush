@@ -145,8 +145,6 @@ func (c *commandArgumentsDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.inputs[c.focused].Blur()
 			c.focused = (c.focused - 1 + len(c.inputs)) % len(c.inputs)
 			c.inputs[c.focused].Focus()
-		case key.Matches(msg, c.keys.Paste):
-			return c, textinput.Paste
 		case key.Matches(msg, c.keys.Close):
 			return c, util.CmdHandler(dialogs.CloseDialogMsg{})
 		default:
