@@ -380,7 +380,7 @@ func TestEditor_StepBackToBoundAndThenForward(t *testing.T) {
 	assert.Equal(t, "First message user sent", mEditor.stepOverHistory(history, previousDir))
 	assert.Equal(t, "Second message user sent", mEditor.stepOverHistory(history, forwardDir))
 	assert.Equal(t, "Third message user sent", mEditor.stepOverHistory(history, forwardDir))
-	assert.Equal(t, "Third message user sent", mEditor.stepOverHistory(history, forwardDir))
+	assert.Equal(t, "Current value in the input field", mEditor.stepOverHistory(history, forwardDir))
 }
 
 // TestHelperFunctions demonstrates how to use the batch message helpers
