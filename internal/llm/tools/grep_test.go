@@ -205,7 +205,9 @@ func TestSearchWithRipGrepButItFailsToRunHandleError(t *testing.T) {
 		{
 			name: "exit code 1 returns no matches and no error",
 			err: func() error {
-				cmd := exec.Command("sh", "-c", "exit 1")
+				ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, "sh", "-c", "exit 1")
 				err := cmd.Run()
 				require.Error(t, err)
 				exitErr, ok := err.(*exec.ExitError)
