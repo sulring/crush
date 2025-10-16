@@ -81,6 +81,10 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	// TODO(tauraamui): need to internally emit a known providers data update event or something
+	// to re-apply basically all of the following:
+	// +
+	// +
 	cfg.knownProviders = providers
 
 	env := env.New()
@@ -100,6 +104,8 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 		return nil, fmt.Errorf("failed to configure selected models: %w", err)
 	}
 	cfg.SetupAgents()
+	// +
+	// +
 	return cfg, nil
 }
 

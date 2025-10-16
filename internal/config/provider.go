@@ -22,9 +22,10 @@ type ProviderClient interface {
 }
 
 var (
-	providerOnce sync.Once
+	providerMu   sync.RWMutex
 	providerList []catwalk.Provider
 	providerErr  error
+	initialized  bool
 )
 
 // file to cache provider data
@@ -118,21 +119,44 @@ func UpdateProviders(pathOrUrl string) error {
 	return nil
 }
 
-// NOTE(tauraamui) <REF#2>: see note (REF#1), basically this looks like some logic
-// should be shared/consolidated.
 func Providers(cfg *Config) ([]catwalk.Provider, error) {
-	providerOnce.Do(func() {
+	providerMu.Lock()
+	if !initialized {
 		catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
 		client := catwalk.NewWithURL(catwalkURL)
 		path := providerCacheFileData()
 
 		autoUpdateDisabled := cfg.Options.DisableProviderAutoUpdate
-		providerList, providerErr = loadProviders(autoUpdateDisabled, client, path)
-	})
+		providerList, providerErr = loadProviders(autoUpdateDisabled, client, path, cfg)
+		initialized = true
+	}
+	providerMu.Unlock()
+
+	providerMu.RLock()
+	defer providerMu.RUnlock()
 	return providerList, providerErr
 }
 
-func loadProviders(autoUpdateDisabled bool, client ProviderClient, path string) ([]catwalk.Provider, error) {
+func reloadProviders(path string) {
+	providerMu.Lock()
+	defer providerMu.Unlock()
+
+	providers, err := loadProvidersFromCache(path)
+	if err != nil {
+		slog.Error("Failed to reload providers from cache", "error", err)
+		return
+	}
+	if len(providers) == 0 {
+		slog.Error("Empty providers list after reload")
+		return
+	}
+
+	providerList = providers
+	providerErr = nil
+	slog.Info("Providers reloaded successfully", "count", len(providers))
+}
+
+func loadProviders(autoUpdateDisabled bool, client ProviderClient, path string, cfg *Config) ([]catwalk.Provider, error) {
 	cacheIsStale, cacheExists := isCacheStale(path)
 
 	catwalkGetAndSave := func() ([]catwalk.Provider, error) {
@@ -164,7 +188,10 @@ func loadProviders(autoUpdateDisabled bool, client ProviderClient, path string) 
 			}
 			if err := saveProvidersInCache(path, providers); err != nil {
 				slog.Error("Failed to update providers.json in background", "error", err)
+				return
 			}
+
+			reloadProviders(path)
 		}()
 	}
 
