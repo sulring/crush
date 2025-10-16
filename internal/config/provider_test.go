@@ -35,6 +35,7 @@ func (m *mockProviderClient) GetProviders() ([]catwalk.Provider, error) {
 func TestProvider_ProvidersReturnsFromClientIfNoCache(t *testing.T) {
 	defer func() {
 		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+		providerList = nil
 	}()
 	require.False(t, initialized)
 	catwalkProviderData := []catwalk.Provider{
@@ -53,6 +54,7 @@ func TestProvider_ProvidersReturnsFromClientIfNoCache(t *testing.T) {
 func TestProvider_loadProvidersNoIssues(t *testing.T) {
 	defer func() {
 		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+		providerList = nil
 	}()
 	client := &mockProviderClient{shouldFail: false}
 	tmpPath := t.TempDir() + "/providers.json"
@@ -71,6 +73,7 @@ func TestProvider_loadProvidersNoIssues(t *testing.T) {
 func TestProvider_loadProvidersWithIssues(t *testing.T) {
 	defer func() {
 		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+		providerList = nil
 	}()
 	require.False(t, initialized)
 	client := &mockProviderClient{shouldFail: true}
@@ -101,6 +104,7 @@ func TestProvider_loadProvidersWithIssues(t *testing.T) {
 func TestProvider_loadProvidersWithIssuesAndNoCache(t *testing.T) {
 	defer func() {
 		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+		providerList = nil
 	}()
 	client := &mockProviderClient{shouldFail: true}
 	tmpPath := t.TempDir() + "/providers.json"
@@ -269,6 +273,7 @@ func TestProvider_reloadProvidersThreadSafety(t *testing.T) {
 func TestProvider_reloadProvidersWithEmptyCache(t *testing.T) {
 	defer func() {
 		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+		providerList = nil
 	}()
 
 	tmpPath := t.TempDir() + "/providers.json"
@@ -310,6 +315,11 @@ func TestProvider_reloadProvidersWithEmptyCache(t *testing.T) {
 }
 
 func TestProvider_reloadProvidersWithInvalidCache(t *testing.T) {
+	defer func() {
+		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+		providerList = nil
+	}()
+
 	tmpPath := t.TempDir() + "/providers.json"
 
 	initialProviders := []catwalk.Provider{
