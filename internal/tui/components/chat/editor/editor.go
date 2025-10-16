@@ -75,7 +75,6 @@ type editorCmp struct {
 	isCompletionsOpen     bool
 
 	previouslyScrollingPromptHistory bool
-	scrollingPromptHistory           bool
 	promptHistoryIndex               int
 	historyCache                     []string
 }
@@ -671,7 +670,6 @@ func (m *editorCmp) stepOverHistory(resolveHistoricMessages func(context.Context
 
 	switch resolveDirection() {
 	case previous:
-		m.scrollingPromptHistory = true
 		return m.stepBack(messageHistory)
 	case next:
 		return m.stepForward(messageHistory)
@@ -700,7 +698,6 @@ func (m *editorCmp) resetHistory() {
 	m.historyCache = nil
 	m.promptHistoryIndex = 0
 	m.previouslyScrollingPromptHistory = false
-	m.scrollingPromptHistory = false
 }
 
 func newTextArea() *textarea.Model {
