@@ -289,7 +289,8 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !model.SupportsImages {
 			return m, util.ReportWarn("File attachments are not supported by the current model: " + model.Name)
 		}
-		return m, util.CmdHandler(onPaste(msg)) // inject fsys accessible from PWD
+        return m, filepicker.OnPaste(filepicker.ResolveFS, string(msg)) // inject fsys accessibly from PWD
+
 	case commands.ToggleYoloModeMsg:
 		m.setEditorPrompt()
 		return m, nil
