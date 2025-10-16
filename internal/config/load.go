@@ -74,6 +74,8 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 		assignIfNil(&cfg.Options.TUI.Completions.MaxItems, items)
 	}
 
+	// NOTE(tauraamui): current entrypoint for invoking providers fetch for
+	// 					the rest of the app as a whole.
 	// Load known providers, this loads the config from catwalk
 	providers, err := Providers(cfg)
 	if err != nil {

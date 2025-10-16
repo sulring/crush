@@ -78,6 +78,11 @@ func loadProvidersFromCache(path string) ([]catwalk.Provider, error) {
 	return providers, nil
 }
 
+// NOTE(tauraamui) <REF#1>: there seems to be duplication of logic for updating
+// the providers cache/from catwalk, in that this method is only invoked/used by the
+// catwalk CLI command, when it should probably be the exact same behaviour that
+// crush carries out internally as well when it does the sync internally/automatically
+// see (REF#2)
 func UpdateProviders(pathOrUrl string) error {
 	var providers []catwalk.Provider
 	pathOrUrl = cmp.Or(pathOrUrl, os.Getenv("CATWALK_URL"), defaultCatwalkURL)
@@ -113,6 +118,8 @@ func UpdateProviders(pathOrUrl string) error {
 	return nil
 }
 
+// NOTE(tauraamui) <REF#2>: see note (REF#1), basically this looks like some logic
+// should be shared/consolidated.
 func Providers(cfg *Config) ([]catwalk.Provider, error) {
 	providerOnce.Do(func() {
 		catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
