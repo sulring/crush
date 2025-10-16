@@ -353,7 +353,7 @@ func (m *modelDialogCmp) isProviderConfigured(providerID string) bool {
 
 func (m *modelDialogCmp) getProvider(providerID catwalk.InferenceProvider) (*catwalk.Provider, error) {
 	cfg := config.Get()
-	providers, err := config.Providers(cfg)
+	providers, err := config.Providers(cfg.Options.DisableProviderAutoUpdate)
 	if err != nil {
 		return nil, err
 	}

@@ -19,8 +19,7 @@ func TestProvider_loadProvidersEmptyResult(t *testing.T) {
 	client := &emptyProviderClient{}
 	tmpPath := t.TempDir() + "/providers.json"
 
-	cfg := &Config{}
-	providers, err := loadProviders(false, client, tmpPath, cfg)
+	providers, err := loadProviders(false, client, tmpPath)
 	require.Contains(t, err.Error(), "Crush was unable to fetch an updated list of providers")
 	require.Empty(t, providers)
 	require.Len(t, providers, 0)
@@ -40,8 +39,7 @@ func TestProvider_loadProvidersEmptyCache(t *testing.T) {
 	require.NoError(t, os.WriteFile(tmpPath, data, 0o644))
 
 	// Should refresh and get real providers instead of using empty cache
-	cfg := &Config{}
-	providers, err := loadProviders(false, client, tmpPath, cfg)
+	providers, err := loadProviders(false, client, tmpPath)
 	require.NoError(t, err)
 	require.NotNil(t, providers)
 	require.Len(t, providers, 1)

@@ -77,7 +77,7 @@ func Load(workingDir, dataDir string, debug bool) (*Config, error) {
 	// NOTE(tauraamui): current entrypoint for invoking providers fetch for
 	// 					the rest of the app as a whole.
 	// Load known providers, this loads the config from catwalk
-	providers, err := Providers(cfg)
+	providers, err := Providers(cfg.Options.DisableProviderAutoUpdate)
 	if err != nil {
 		return nil, err
 	}

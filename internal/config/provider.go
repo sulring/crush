@@ -119,18 +119,19 @@ func UpdateProviders(pathOrUrl string) error {
 	return nil
 }
 
-func Providers(cfg *Config) ([]catwalk.Provider, error) {
-	providerMu.Lock()
-	if !initialized {
-		catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
-		client := catwalk.NewWithURL(catwalkURL)
-		path := providerCacheFileData()
+func Providers(autoUpdateDisabled bool) ([]catwalk.Provider, error) {
+	catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
+	client := catwalk.NewWithURL(catwalkURL)
+	return ProvidersWithClient(autoUpdateDisabled, client, providerCacheFileData())
+}
 
-		autoUpdateDisabled := cfg.Options.DisableProviderAutoUpdate
-		providerList, providerErr = loadProviders(autoUpdateDisabled, client, path, cfg)
+func ProvidersWithClient(autoUpdateDisabled bool, client ProviderClient, path string) ([]catwalk.Provider, error) {
+	if !initialized {
+		providerMu.Lock()
+		providerList, providerErr = loadProviders(autoUpdateDisabled, client, path)
 		initialized = true
+		providerMu.Unlock()
 	}
-	providerMu.Unlock()
 
 	providerMu.RLock()
 	defer providerMu.RUnlock()
@@ -156,7 +157,7 @@ func reloadProviders(path string) {
 	slog.Info("Providers reloaded successfully", "count", len(providers))
 }
 
-func loadProviders(autoUpdateDisabled bool, client ProviderClient, path string, cfg *Config) ([]catwalk.Provider, error) {
+func loadProviders(autoUpdateDisabled bool, client ProviderClient, path string) ([]catwalk.Provider, error) {
 	cacheIsStale, cacheExists := isCacheStale(path)
 
 	catwalkGetAndSave := func() ([]catwalk.Provider, error) {
