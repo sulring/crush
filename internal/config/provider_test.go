@@ -9,16 +9,21 @@ import (
 	"time"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type mockProviderClient struct {
 	shouldFail bool
+	data       []catwalk.Provider
 }
 
 func (m *mockProviderClient) GetProviders() ([]catwalk.Provider, error) {
 	if m.shouldFail {
 		return nil, errors.New("failed to load providers")
+	}
+	if len(m.data) > 0 {
+		return m.data, nil
 	}
 	return []catwalk.Provider{
 		{
@@ -27,11 +32,32 @@ func (m *mockProviderClient) GetProviders() ([]catwalk.Provider, error) {
 	}, nil
 }
 
+func TestProvider_ProvidersReturnsFromClientIfNoCache(t *testing.T) {
+	defer func() {
+		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+	}()
+	require.False(t, initialized)
+	catwalkProviderData := []catwalk.Provider{
+		{Name: "Mock1"},
+		{Name: "Mock2"},
+	}
+	client := &mockProviderClient{shouldFail: false, data: catwalkProviderData}
+
+	autoUpdateDisabled := false // this doesn't matter within this test
+	resolvedProviders, err := ProvidersWithClient(autoUpdateDisabled, client, "non-existent-cache-path")
+
+	require.NoError(t, err)
+	assert.Equal(t, catwalkProviderData, resolvedProviders)
+}
+
 func TestProvider_loadProvidersNoIssues(t *testing.T) {
+	defer func() {
+		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+	}()
 	client := &mockProviderClient{shouldFail: false}
 	tmpPath := t.TempDir() + "/providers.json"
-	cfg := &Config{}
-	providers, err := loadProviders(false, client, tmpPath, cfg)
+
+	providers, err := loadProviders(false, client, tmpPath)
 	require.NoError(t, err)
 	require.NotNil(t, providers)
 	require.Len(t, providers, 1)
@@ -43,6 +69,10 @@ func TestProvider_loadProvidersNoIssues(t *testing.T) {
 }
 
 func TestProvider_loadProvidersWithIssues(t *testing.T) {
+	defer func() {
+		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+	}()
+	require.False(t, initialized)
 	client := &mockProviderClient{shouldFail: true}
 	tmpPath := t.TempDir() + "/providers.json"
 	// store providers to a temporary file
@@ -60,8 +90,8 @@ func TestProvider_loadProvidersWithIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to write old providers to file: %v", err)
 	}
-	cfg := &Config{}
-	providers, err := loadProviders(false, client, tmpPath, cfg)
+
+	providers, err := loadProviders(false, client, tmpPath)
 	require.NoError(t, err)
 	require.NotNil(t, providers)
 	require.Len(t, providers, 1)
@@ -69,10 +99,13 @@ func TestProvider_loadProvidersWithIssues(t *testing.T) {
 }
 
 func TestProvider_loadProvidersWithIssuesAndNoCache(t *testing.T) {
+	defer func() {
+		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+	}()
 	client := &mockProviderClient{shouldFail: true}
 	tmpPath := t.TempDir() + "/providers.json"
-	cfg := &Config{}
-	providers, err := loadProviders(false, client, tmpPath, cfg)
+
+	providers, err := loadProviders(false, client, tmpPath)
 	require.Error(t, err)
 	require.Nil(t, providers, "Expected nil providers when loading fails and no cache exists")
 }
@@ -97,7 +130,10 @@ func (m *dynamicMockProviderClient) GetProviders() ([]catwalk.Provider, error) {
 }
 
 func TestProvider_backgroundReloadAfterCacheUpdate(t *testing.T) {
-	t.Parallel()
+	defer func() {
+		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+		providerList = nil
+	}()
 
 	tmpPath := t.TempDir() + "/providers.json"
 
@@ -130,8 +166,7 @@ func TestProvider_backgroundReloadAfterCacheUpdate(t *testing.T) {
 		providerMu.Unlock()
 	}()
 
-	cfg := &Config{}
-	providers, err := loadProviders(false, client, tmpPath, cfg)
+	providers, err := loadProviders(false, client, tmpPath)
 	require.NoError(t, err)
 	require.NotNil(t, providers)
 	require.Len(t, providers, 1)
@@ -167,6 +202,11 @@ func TestProvider_backgroundReloadAfterCacheUpdate(t *testing.T) {
 }
 
 func TestProvider_reloadProvidersThreadSafety(t *testing.T) {
+	defer func() {
+		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+		providerList = nil
+	}()
+
 	tmpPath := t.TempDir() + "/providers.json"
 
 	initialProviders := []catwalk.Provider{
@@ -227,6 +267,10 @@ func TestProvider_reloadProvidersThreadSafety(t *testing.T) {
 }
 
 func TestProvider_reloadProvidersWithEmptyCache(t *testing.T) {
+	defer func() {
+		initialized = false // NOTE(tauramui): should make these part of a test suite's tidy method
+	}()
+
 	tmpPath := t.TempDir() + "/providers.json"
 
 	initialProviders := []catwalk.Provider{
