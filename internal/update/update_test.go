@@ -1,7 +1,6 @@
 package update
 
 import (
-	"context"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/version"
@@ -9,18 +8,26 @@ import (
 )
 
 func TestCheckForUpdate_DevelopmentVersion(t *testing.T) {
-	// Test that development versions don't trigger updates.
-	ctx := context.Background()
-
-	// Temporarily set version to development version.
 	originalVersion := version.Version
 	version.Version = "unknown"
-	defer func() {
+	t.Cleanup(func() {
 		version.Version = originalVersion
-	}()
+	})
 
-	info, err := Check(ctx)
+	info, err := Check(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, info)
-	require.False(t, info.Available)
+	require.False(t, info.Available())
+}
+
+func TestCheckForUpdate_Old(t *testing.T) {
+	originalVersion := version.Version
+	version.Version = "0.10.0"
+	t.Cleanup(func() {
+		version.Version = originalVersion
+	})
+	info, err := Check(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	require.True(t, info.Available())
 }

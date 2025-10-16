@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/charmbracelet/crush/internal/version"
 )
 
@@ -23,35 +22,28 @@ type Info struct {
 	CurrentVersion string
 	LatestVersion  string
 	ReleaseURL     string
-	Available      bool
 }
 
+func (i Info) Available() bool { return i.CurrentVersion != i.LatestVersion }
+
 // Check checks if a new version is available.
-func Check(ctx context.Context) (*Info, error) {
-	info := &Info{
+func Check(ctx context.Context) (Info, error) {
+	info := Info{
 		CurrentVersion: version.Version,
+		LatestVersion:  version.Version,
 	}
 
-	cv, err := semver.NewVersion(version.Version)
-	if err != nil {
-		// its devel, unknown, etc
+	if info.CurrentVersion == "devel" || info.CurrentVersion == "unknown" {
 		return info, nil
 	}
 
 	release, err := fetchLatestRelease(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch latest release: %w", err)
-	}
-
-	lv, err := semver.NewVersion(release.TagName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse latest version: %w", err)
+		return info, fmt.Errorf("failed to fetch latest release: %w", err)
 	}
 
 	info.LatestVersion = strings.TrimPrefix(release.TagName, "v")
 	info.ReleaseURL = release.HTMLURL
-	info.Available = lv.GreaterThan(cv)
-
 	return info, nil
 }
 

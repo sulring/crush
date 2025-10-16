@@ -353,7 +353,7 @@ func (app *App) checkForUpdates(ctx context.Context) {
 	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	info, err := update.Check(checkCtx)
-	if err != nil || info == nil || !info.Available {
+	if err != nil || !info.Available() {
 		return
 	}
 	app.events <- pubsub.UpdateAvailableMsg{
