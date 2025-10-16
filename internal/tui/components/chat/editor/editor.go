@@ -240,10 +240,6 @@ func isExtOfAllowedImageType(path string) bool {
 
 type ResolveAbs func(path string) (string, error)
 
-func onPaste(msg tea.PasteMsg) tea.Msg {
-	return filepicker.OnPaste(filepicker.ResolveFS, string(msg))
-}
-
 func activeModelHasImageSupport() (bool, string) {
 	agentCfg := config.Get().Agents["coder"]
 	model := config.Get().GetModelByType(agentCfg.Model)
