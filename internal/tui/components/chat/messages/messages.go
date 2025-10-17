@@ -54,7 +54,7 @@ type messageCmp struct {
 	// Core message data and state
 	message  message.Message // The underlying message content
 	spinning bool            // Whether to show loading animation
-	anim     anim.Anim       // Animation component for loading states
+	anim     anim.Spinner    // Animation component for loading states
 
 	// Thinking viewport for displaying reasoning content
 	thinkingViewport viewport.Model

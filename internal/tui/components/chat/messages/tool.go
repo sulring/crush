@@ -61,8 +61,8 @@ type toolCallCmp struct {
 	permissionGranted   bool
 
 	// Animation state for pending tool calls
-	spinning bool      // Whether to show loading animation
-	anim     anim.Anim // Animation component for pending states
+	spinning bool         // Whether to show loading animation
+	anim     anim.Spinner // Animation component for pending states
 
 	nestedToolCalls []ToolCallCmp // Nested tool calls for hierarchical display
 }

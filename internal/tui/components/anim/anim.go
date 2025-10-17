@@ -97,7 +97,14 @@ type Settings struct {
 	Static      bool
 }
 
-// anim is a Bubble for an animated spinner.
+// Spinner is a Bubble for a spinner.
+type Spinner interface {
+	Init() tea.Cmd
+	Update(tea.Msg) (Spinner, tea.Cmd)
+	View() string
+	SetLabel(string)
+}
+
 type anim struct {
 	width            int
 	cyclingCharWidth int
@@ -116,7 +123,7 @@ type anim struct {
 }
 
 // New creates a new anim instance with the specified width and label.
-func New(opts Settings) Anim {
+func New(opts Settings) Spinner {
 	// Validate settings.
 	if opts.Size < 1 {
 		opts.Size = defaultNumCyclingChars
@@ -319,7 +326,7 @@ func (a *anim) Init() tea.Cmd {
 }
 
 // Update processes animation steps (or not).
-func (a *anim) Update(msg tea.Msg) (Anim, tea.Cmd) {
+func (a *anim) Update(msg tea.Msg) (Spinner, tea.Cmd) {
 	switch msg := msg.(type) {
 	case StepMsg:
 		if msg.id != a.id {

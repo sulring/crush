@@ -20,7 +20,7 @@ type Spinner struct {
 
 type model struct {
 	cancel context.CancelFunc
-	anim   anim.Anim
+	anim   anim.Spinner
 }
 
 func (m model) Init() tea.Cmd { return m.anim.Init() }
