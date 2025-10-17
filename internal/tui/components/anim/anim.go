@@ -124,6 +124,14 @@ type anim struct {
 
 // New creates a new anim instance with the specified width and label.
 func New(opts Settings) Spinner {
+	if colorIsUnset(opts.LabelColor) {
+		opts.LabelColor = defaultLabelColor
+	}
+
+	if opts.Static {
+		return newStatic(opts.Label, opts.LabelColor)
+	}
+
 	// Validate settings.
 	if opts.Size < 1 {
 		opts.Size = defaultNumCyclingChars
@@ -134,13 +142,7 @@ func New(opts Settings) Spinner {
 	if colorIsUnset(opts.GradColorB) {
 		opts.GradColorB = defaultGradColorB
 	}
-	if colorIsUnset(opts.LabelColor) {
-		opts.LabelColor = defaultLabelColor
-	}
 
-	if opts.Static {
-		return newStatic(opts.Label, opts.LabelColor)
-	}
 	a := &anim{}
 	a.id = nextID()
 	a.startTime = time.Now()
@@ -321,9 +323,7 @@ func (a *anim) Width() (w int) {
 }
 
 // Init starts the animation.
-func (a *anim) Init() tea.Cmd {
-	return a.Step()
-}
+func (a *anim) Init() tea.Cmd { return stepCmd(a.id) }
 
 // Update processes animation steps (or not).
 func (a *anim) Update(msg tea.Msg) (Spinner, tea.Cmd) {
@@ -348,7 +348,7 @@ func (a *anim) Update(msg tea.Msg) (Spinner, tea.Cmd) {
 		} else if !a.initialized.Load() && time.Since(a.startTime) >= maxBirthOffset {
 			a.initialized.Store(true)
 		}
-		return a, a.Step()
+		return a, stepCmd(a.id)
 	default:
 		return a, nil
 	}
@@ -388,10 +388,10 @@ func (a *anim) View() string {
 	return b.String()
 }
 
-// Step is a command that triggers the next step in the animation.
-func (a *anim) Step() tea.Cmd {
+// stepCmd is a command that triggers the next stepCmd in the animation.
+func stepCmd(id int) tea.Cmd {
 	return tea.Tick(time.Second/time.Duration(fps), func(t time.Time) tea.Msg {
-		return StepMsg{id: a.id}
+		return StepMsg{id: id}
 	})
 }
 

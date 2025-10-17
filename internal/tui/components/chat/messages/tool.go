@@ -120,6 +120,7 @@ func NewToolCallCmp(parentMessageID string, tc message.ToolCall, permissions per
 	}
 	t := styles.CurrentTheme()
 	m.anim = anim.New(anim.Settings{
+		Static:      isReduceAnimations(),
 		Size:        15,
 		Label:       "Working",
 		GradColorA:  t.Primary,
@@ -129,6 +130,7 @@ func NewToolCallCmp(parentMessageID string, tc message.ToolCall, permissions per
 	})
 	if m.isNested {
 		m.anim = anim.New(anim.Settings{
+			Static:      isReduceAnimations(),
 			Size:        10,
 			GradColorA:  t.Primary,
 			GradColorB:  t.Secondary,

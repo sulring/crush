@@ -75,6 +75,7 @@ func NewMessageCmp(msg message.Message) MessageCmp {
 	m := &messageCmp{
 		message: msg,
 		anim: anim.New(anim.Settings{
+			Static:      isReduceAnimations(),
 			Size:        15,
 			GradColorA:  t.Primary,
 			GradColorB:  t.Secondary,
@@ -424,4 +425,11 @@ func (m *assistantSectionModel) IsSectionHeader() bool {
 
 func (m *messageCmp) ID() string {
 	return m.message.ID
+}
+
+func isReduceAnimations() bool {
+	cfg := config.Get()
+	return cfg.Options != nil &&
+		cfg.Options.TUI != nil &&
+		cfg.Options.TUI.ReduceAnimations
 }
