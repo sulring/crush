@@ -280,12 +280,24 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetValue(msg.Text)
 		m.textarea.MoveToEnd()
 	case tea.PasteMsg:
-		agentCfg := config.Get().Agents["coder"]
-		model := config.Get().GetModelByType(agentCfg.Model)
+		agentCfg := m.app.Config().Agents["coder"]
+		model := m.app.Config().GetModelByType(agentCfg.Model)
 		if !model.SupportsImages {
 			return m, util.ReportWarn("File attachments are not supported by the current model: " + model.Name)
 		}
-		return m, filepicker.OnPaste(filepicker.ResolveFS, string(msg)) // inject fsys accessibly from PWD
+		// INFO: (kujtim) this is needed because on mac when you have a path with spaces it adds `\ ` instead of ` `
+		path := strings.ReplaceAll(string(msg), "\\ ", " ")
+		path, err := filepath.Abs(strings.TrimSpace(path))
+		if err != nil {
+			m.textarea, cmd = m.textarea.Update(msg)
+			return m, cmd
+		}
+		// check if this is actually a PATH or not so that we actually allow normal pasting
+		if _, err := os.Stat(path); err != nil {
+			m.textarea, cmd = m.textarea.Update(msg)
+			return m, cmd
+		}
+		return m, filepicker.OnPaste(filepicker.ResolveFS, path) // inject fsys accessibly from PWD
 
 	case commands.ToggleYoloModeMsg:
 		m.setEditorPrompt()
@@ -612,7 +624,6 @@ func newTextArea() *textarea.Model {
 
 func newEditor(app *app.App, resolveDirLister fsext.DirectoryListerResolver) *editorCmp {
 	e := editorCmp{
-		// TODO: remove the app instance from here
 		app:             app,
 		textarea:        newTextArea(),
 		keyMap:          DefaultEditorKeyMap(),
