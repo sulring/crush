@@ -61,8 +61,8 @@ type toolCallCmp struct {
 	permissionGranted   bool
 
 	// Animation state for pending tool calls
-	spinning bool       // Whether to show loading animation
-	anim     util.Model // Animation component for pending states
+	spinning bool      // Whether to show loading animation
+	anim     anim.Anim // Animation component for pending states
 
 	nestedToolCalls []ToolCallCmp // Nested tool calls for hierarchical display
 }
@@ -159,8 +159,8 @@ func (m *toolCallCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.spinning {
-			u, cmd := m.anim.Update(msg)
-			m.anim = u.(util.Model)
+			var cmd tea.Cmd
+			m.anim, cmd = m.anim.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 		return m, tea.Batch(cmds...)
