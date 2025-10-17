@@ -193,6 +193,66 @@ func (f *filterableGroupList[T]) clearItemState() []tea.Cmd {
 	return cmds
 }
 
+func (f *filterableGroupList[T]) getGroupName(g Group[T]) string {
+	if section, ok := g.Section.(*itemSectionModel); ok {
+		return strings.ToLower(section.title)
+	}
+	return strings.ToLower(g.Section.ID())
+}
+
+func (f *filterableGroupList[T]) setMatchIndexes(item T, indexes []int) {
+	if i, ok := any(item).(HasMatchIndexes); ok {
+		i.MatchIndexes(indexes)
+	}
+}
+
+func (f *filterableGroupList[T]) filterItemsInGroup(group Group[T], query string) []T {
+	if query == "" {
+		// No query, return all items with cleared match indexes
+		var items []T
+		for _, item := range group.Items {
+			f.setMatchIndexes(item, make([]int, 0))
+			items = append(items, item)
+		}
+		return items
+	}
+
+	name := f.getGroupName(group) + " "
+
+	names := make([]string, len(group.Items))
+	for i, item := range group.Items {
+		names[i] = strings.ToLower(name + item.FilterValue())
+	}
+
+	matches := fuzzy.Find(query, names)
+	sort.SliceStable(matches, func(i, j int) bool {
+		return matches[i].Score > matches[j].Score
+	})
+
+	if len(matches) > 0 {
+		var matchedItems []T
+		for _, match := range matches {
+			item := group.Items[match.Index]
+			var idxs []int
+			for _, idx := range match.MatchedIndexes {
+				// adjusts removing group name highlights
+				if idx < len(name) {
+					continue
+				}
+				idxs = append(idxs, idx-len(name))
+			}
+			f.setMatchIndexes(item, idxs)
+			matchedItems = append(matchedItems, item)
+		}
+		return matchedItems
+	}
+
+	return []T{}
+}
+
+func (f *filterableGroupList[T]) Filter(query string) tea.Cmd {
+	cmds := f.clearItemState()
+
 	if query == "" {
 		return f.groupedList.SetGroups(f.groups)
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/exp/ordered"
 	"github.com/rivo/uniseg"
 )
 
@@ -556,7 +555,7 @@ func (l *list[T]) viewPosition() (int, int) {
 		// Ensure offset doesn't exceed the maximum valid offset
 		maxOffset := max(0, l.virtualHeight-l.height)
 		actualOffset := min(l.offset, maxOffset)
-		
+
 		start = actualOffset
 		if l.virtualHeight > 0 {
 			end = min(actualOffset+l.height-1, l.virtualHeight-1)
@@ -569,7 +568,7 @@ func (l *list[T]) viewPosition() (int, int) {
 			// Ensure offset doesn't exceed the maximum valid offset
 			maxOffset := max(0, l.virtualHeight-l.height)
 			actualOffset := min(l.offset, maxOffset)
-			
+
 			end = l.virtualHeight - actualOffset - 1
 			start = max(0, end-l.height+1)
 		} else {
@@ -1031,10 +1030,10 @@ func (l *list[T]) renderVirtualScrolling() string {
 		linesAdded := 0
 		maxLinesToAdd := len(itemLines) - startLine
 		for i := 0; i < maxLinesToAdd && len(lines) < l.height; i++ {
-			lines = append(lines, itemLines[startLine + i])
+			lines = append(lines, itemLines[startLine+i])
 			linesAdded++
 		}
-		
+
 		// Update currentLine to track our position in virtual space
 		if vis.pos.start < viewStart {
 			// Item started before viewport, we're now at viewStart + linesAdded
@@ -1047,7 +1046,7 @@ func (l *list[T]) renderVirtualScrolling() string {
 
 	// For content that fits entirely in viewport, don't pad with empty lines
 	// Only pad if we have scrolled or if content is larger than viewport
-	
+
 	if l.virtualHeight > l.height || l.offset > 0 {
 		// Fill remaining viewport with empty lines if needed
 		initialLen := len(lines)
