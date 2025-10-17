@@ -45,9 +45,6 @@ var anthropicCoderPrompt []byte
 //go:embed gemini.md
 var geminiCoderPrompt []byte
 
-//go:embed openai.md
-var openaiCoderPrompt []byte
-
 //go:embed v2.md
 var coderV2Prompt []byte
 
@@ -56,7 +53,7 @@ func getEnvironmentInfo() string {
 	isGit := isGitRepo(cwd)
 	platform := runtime.GOOS
 	date := time.Now().Format("1/2/2006")
-	output, _ := tools.ListDirectoryTree(cwd, nil)
+	output, _, _ := tools.ListDirectoryTree(cwd, tools.LSParams{})
 	return fmt.Sprintf(`Here is useful information about the environment you are running in:
 <env>
 Working directory: %s

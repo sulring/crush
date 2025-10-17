@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/exp/ordered"
 	"github.com/rivo/uniseg"
 )
 
@@ -1617,7 +1618,7 @@ func (l *list[T]) findWordBoundaries(col, line int) (startCol, endCol int) {
 	if startCol == -1 {
 		return 0, 0
 	}
-	return
+	return startCol, endCol
 }
 
 func (l *list[T]) findParagraphBoundaries(line int) (startLine, endLine int, found bool) {

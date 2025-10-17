@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/exp/ordered"
 	"github.com/google/uuid"
 
 	"github.com/atotto/clipboard"
@@ -29,7 +30,7 @@ import (
 var CopyKey = key.NewBinding(key.WithKeys("c", "y", "C", "Y"), key.WithHelp("c/y", "copy"))
 
 // ClearSelectionKey is the key binding for clearing the current selection in the chat interface.
-var ClearSelectionKey = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear selection"))
+var ClearSelectionKey = key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "clear selection"))
 
 // MessageCmp defines the interface for message components in the chat interface.
 // It combines standard UI model interfaces with message-specific functionality.
@@ -271,7 +272,7 @@ func (m *messageCmp) renderThinkingContent() string {
 		}
 	}
 	fullContent := content.String()
-	height := util.Clamp(lipgloss.Height(fullContent), 1, 10)
+	height := ordered.Clamp(lipgloss.Height(fullContent), 1, 10)
 	m.thinkingViewport.SetHeight(height)
 	m.thinkingViewport.SetWidth(m.textWidth())
 	m.thinkingViewport.SetContent(fullContent)
@@ -281,15 +282,14 @@ func (m *messageCmp) renderThinkingContent() string {
 	if reasoningContent.StartedAt > 0 {
 		duration := m.message.ThinkingDuration()
 		if reasoningContent.FinishedAt > 0 {
-			if duration.String() == "0s" {
-				return ""
-			}
 			m.anim.SetLabel("")
 			opts := core.StatusOpts{
 				Title:       "Thought for",
 				Description: duration.String(),
 			}
-			return t.S().Base.PaddingLeft(1).Render(core.Status(opts, m.textWidth()-1))
+			if duration.String() != "0s" {
+				footer = t.S().Base.PaddingLeft(1).Render(core.Status(opts, m.textWidth()-1))
+			}
 		} else if finishReason != nil && finishReason.Reason == message.FinishReasonCanceled {
 			footer = t.S().Base.PaddingLeft(1).Render(m.toMarkdown("*Canceled*"))
 		} else {
@@ -345,7 +345,7 @@ func (m *messageCmp) GetSize() (int, int) {
 
 // SetSize updates the width of the message component for text wrapping
 func (m *messageCmp) SetSize(width int, height int) tea.Cmd {
-	m.width = util.Clamp(width, 1, 120)
+	m.width = ordered.Clamp(width, 1, 120)
 	m.thinkingViewport.SetWidth(m.width - 4)
 	return nil
 }

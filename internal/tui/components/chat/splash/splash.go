@@ -2,7 +2,6 @@ package splash
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/home"
 	"github.com/charmbracelet/crush/internal/llm/prompt"
 	"github.com/charmbracelet/crush/internal/tui/components/chat"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
@@ -253,6 +253,7 @@ func (s *splashCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return s, cmd
 			}
 			if s.needsProjectInit {
+				s.selectedNo = false
 				return s, s.initializeProject()
 			}
 		case key.Matches(msg, s.keyMap.No):
@@ -397,7 +398,8 @@ func (s *splashCmp) setPreferredModel(selectedItem models.ModelOption) tea.Cmd {
 }
 
 func (s *splashCmp) getProvider(providerID catwalk.InferenceProvider) (*catwalk.Provider, error) {
-	providers, err := config.Providers()
+	cfg := config.Get()
+	providers, err := config.Providers(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -648,12 +650,7 @@ func (s *splashCmp) cwdPart() string {
 }
 
 func (s *splashCmp) cwd() string {
-	cwd := config.Get().WorkingDir()
-	homeDir, err := os.UserHomeDir()
-	if err == nil && cwd != homeDir {
-		cwd = strings.ReplaceAll(cwd, homeDir, "~")
-	}
-	return cwd
+	return home.Short(config.Get().WorkingDir())
 }
 
 func LSPList(maxWidth int) []string {

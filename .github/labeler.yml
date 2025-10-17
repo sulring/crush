@@ -23,6 +23,8 @@
   - "/(release|releasing|aur|brew|nix|npm|scoop|termux|winget)/i"
 "area: session":
   - "/session/i"
+"area: shell":
+  - "/shell/i"
 "area: themes":
   - "/theme/i"
 "area: tools":
@@ -41,12 +43,12 @@
   - "/(anthropic|claude)/i"
 "provider: aws bedrock":
   - "/(aws|bedrock)/i"
+"provider: azure":
+  - "/azure/i"
 "provider: google gemini":
   - "/gemini/i"
 "provider: google vertex":
   - "/vertex/i"
-"provider: grok":
-  - "/grok/i"
 "provider: kimi":
   - "/kimi/i"
 "provider: ollama":
@@ -57,5 +59,7 @@
   - "/openrouter/i"
 "provider: qwen":
   - "/qwen/i"
+"provider: xai grok":
+  - "/(xai|x\\.ai|grok)/i"
 "security":
   - "/(security|vulnerability|exploit)/i"

@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss/v2"
-
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/lsp"
-	"github.com/charmbracelet/crush/internal/lsp/protocol"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
 	"github.com/charmbracelet/crush/internal/tui/styles"
+	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
 // RenderOptions contains options for rendering LSP lists.
@@ -23,7 +23,7 @@ type RenderOptions struct {
 }
 
 // RenderLSPList renders a list of LSP status items with the given options.
-func RenderLSPList(lspClients map[string]*lsp.Client, opts RenderOptions) []string {
+func RenderLSPList(lspClients *csync.Map[string, *lsp.Client], opts RenderOptions) []string {
 	t := styles.CurrentTheme()
 	lspList := []string{}
 
@@ -56,29 +56,7 @@ func RenderLSPList(lspClients map[string]*lsp.Client, opts RenderOptions) []stri
 			break
 		}
 
-		// Determine icon color and description based on state
-		icon := t.ItemOfflineIcon
-		description := l.LSP.Command
-
-		if l.LSP.Disabled {
-			description = t.S().Subtle.Render("disabled")
-		} else if state, exists := lspStates[l.Name]; exists {
-			switch state.State {
-			case lsp.StateStarting:
-				icon = t.ItemBusyIcon
-				description = t.S().Subtle.Render("starting...")
-			case lsp.StateReady:
-				icon = t.ItemOnlineIcon
-				description = l.LSP.Command
-			case lsp.StateError:
-				icon = t.ItemErrorIcon
-				if state.Error != nil {
-					description = t.S().Subtle.Render(fmt.Sprintf("error: %s", state.Error.Error()))
-				} else {
-					description = t.S().Subtle.Render("error")
-				}
-			}
-		}
+		icon, description := iconAndDescription(l, t, lspStates)
 
 		// Calculate diagnostic counts if we have LSP clients
 		var extraContent string
@@ -89,7 +67,7 @@ func RenderLSPList(lspClients map[string]*lsp.Client, opts RenderOptions) []stri
 				protocol.SeverityHint:        0,
 				protocol.SeverityInformation: 0,
 			}
-			if client, ok := lspClients[l.Name]; ok {
+			if client, ok := lspClients.Get(l.Name); ok {
 				for _, diagnostics := range client.GetDiagnostics() {
 					for _, diagnostic := range diagnostics {
 						if severity, ok := lspErrs[diagnostic.Severity]; ok {
@@ -131,8 +109,32 @@ func RenderLSPList(lspClients map[string]*lsp.Client, opts RenderOptions) []stri
 	return lspList
 }
 
+func iconAndDescription(l config.LSP, t *styles.Theme, states map[string]app.LSPClientInfo) (lipgloss.Style, string) {
+	if l.LSP.Disabled {
+		return t.ItemOfflineIcon.Foreground(t.FgMuted), t.S().Subtle.Render("disabled")
+	}
+
+	info := states[l.Name]
+	switch info.State {
+	case lsp.StateStarting:
+		return t.ItemBusyIcon, t.S().Subtle.Render("starting...")
+	case lsp.StateReady:
+		return t.ItemOnlineIcon, ""
+	case lsp.StateError:
+		description := t.S().Subtle.Render("error")
+		if info.Error != nil {
+			description = t.S().Subtle.Render(fmt.Sprintf("error: %s", info.Error.Error()))
+		}
+		return t.ItemErrorIcon, description
+	case lsp.StateDisabled:
+		return t.ItemOfflineIcon.Foreground(t.FgMuted), t.S().Subtle.Render("inactive")
+	default:
+		return t.ItemOfflineIcon, ""
+	}
+}
+
 // RenderLSPBlock renders a complete LSP block with optional truncation indicator.
-func RenderLSPBlock(lspClients map[string]*lsp.Client, opts RenderOptions, showTruncationIndicator bool) string {
+func RenderLSPBlock(lspClients *csync.Map[string, *lsp.Client], opts RenderOptions, showTruncationIndicator bool) string {
 	t := styles.CurrentTheme()
 	lspList := RenderLSPList(lspClients, opts)
 

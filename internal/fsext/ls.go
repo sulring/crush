@@ -1,14 +1,17 @@
 package fsext
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/charlievieth/fastwalk"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/home"
 	ignore "github.com/sabhiram/go-gitignore"
 )
 
@@ -69,11 +72,16 @@ var commonIgnorePatterns = sync.OnceValue(func() ignore.IgnoreParser {
 
 		// Crush
 		".crush",
+
+		// macOS stuff
+		"OrbStack",
+		".local",
+		".share",
 	)
 })
 
 var homeIgnore = sync.OnceValue(func() ignore.IgnoreParser {
-	home := HomeDir()
+	home := home.Dir()
 	var lines []string
 	for _, name := range []string{
 		filepath.Join(home, ".gitignore"),
@@ -140,8 +148,16 @@ func (dl *directoryLister) shouldIgnore(path string, ignorePatterns []string) bo
 		return true
 	}
 
-	if dl.getIgnore(filepath.Dir(path)).MatchesPath(relPath) {
-		slog.Debug("ignoring dir pattern", "path", relPath, "dir", filepath.Dir(path))
+	parentDir := filepath.Dir(path)
+	ignoreParser := dl.getIgnore(parentDir)
+	if ignoreParser.MatchesPath(relPath) {
+		slog.Debug("ignoring dir pattern", "path", relPath, "dir", parentDir)
+		return true
+	}
+
+	// For directories, also check with trailing slash (gitignore convention)
+	if ignoreParser.MatchesPath(relPath + "/") {
+		slog.Debug("ignoring dir pattern with slash", "path", relPath+"/", "dir", parentDir)
 		return true
 	}
 
@@ -159,10 +175,13 @@ func (dl *directoryLister) shouldIgnore(path string, ignorePatterns []string) bo
 
 func (dl *directoryLister) checkParentIgnores(path string) bool {
 	parent := filepath.Dir(filepath.Dir(path))
-	for parent != dl.rootPath && parent != "." && path != "." {
+	for parent != "." && path != "." {
 		if dl.getIgnore(parent).MatchesPath(path) {
 			slog.Debug("ingoring parent dir pattern", "path", path, "dir", parent)
 			return true
+		}
+		if parent == dl.rootPath {
+			break
 		}
 		parent = filepath.Dir(parent)
 	}
@@ -187,16 +206,17 @@ func (dl *directoryLister) getIgnore(path string) ignore.IgnoreParser {
 }
 
 // ListDirectory lists files and directories in the specified path,
-func ListDirectory(initialPath string, ignorePatterns []string, limit int) ([]string, bool, error) {
-	var results []string
-	truncated := false
+func ListDirectory(initialPath string, ignorePatterns []string, depth, limit int) ([]string, bool, error) {
+	found := csync.NewSlice[string]()
 	dl := NewDirectoryLister(initialPath)
 
+	slog.Debug("listing directory", "path", initialPath, "depth", depth, "limit", limit, "ignorePatterns", ignorePatterns)
+
 	conf := fastwalk.Config{
-		Follow: true,
-		// Use forward slashes when running a Windows binary under WSL or MSYS
-		ToSlash: fastwalk.DefaultToSlash(),
-		Sort:    fastwalk.SortDirsFirst,
+		Follow:   true,
+		ToSlash:  fastwalk.DefaultToSlash(),
+		Sort:     fastwalk.SortDirsFirst,
+		MaxDepth: depth,
 	}
 
 	err := fastwalk.Walk(&conf, initialPath, func(path string, d os.DirEntry, err error) error {
@@ -215,19 +235,19 @@ func ListDirectory(initialPath string, ignorePatterns []string, limit int) ([]st
 			if d.IsDir() {
 				path = path + string(filepath.Separator)
 			}
-			results = append(results, path)
+			found.Append(path)
 		}
 
-		if limit > 0 && len(results) >= limit {
-			truncated = true
+		if limit > 0 && found.Len() >= limit {
 			return filepath.SkipAll
 		}
 
 		return nil
 	})
-	if err != nil && len(results) == 0 {
-		return nil, truncated, err
+	if err != nil && !errors.Is(err, filepath.SkipAll) {
+		return nil, false, err
 	}
 
-	return results, truncated, nil
+	matches, truncated := truncate(slices.Collect(found.Seq()), limit)
+	return matches, truncated || errors.Is(err, filepath.SkipAll), nil
 }
