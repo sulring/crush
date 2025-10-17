@@ -696,6 +696,13 @@ func (l *list[T]) scrollToSelection() {
 }
 
 func (l *list[T]) changeSelectionWhenScrolling() tea.Cmd {
+	if l.items.Len() == 0 {
+		return nil
+	}
+	if len(l.itemPositions) != l.items.Len() || l.shouldCalculateItemPositions {
+		l.calculateItemPositions()
+		l.shouldCalculateItemPositions = false
+	}
 	if l.selectedIndex < 0 || l.selectedIndex >= len(l.itemPositions) {
 		return nil
 	}
@@ -714,53 +721,57 @@ func (l *list[T]) changeSelectionWhenScrolling() tea.Cmd {
 	itemMiddle := rItem.start + rItem.height/2
 
 	if itemMiddle < start {
-		// select the first item in the viewport
-		// the item is most likely an item coming after this item
-		for {
-			inx := l.firstSelectableItemBelow(l.selectedIndex)
-			if inx == ItemNotFound {
+		inx := l.firstSelectableItemBelow(l.selectedIndex)
+		if inx == ItemNotFound {
+			return nil
+		}
+		if inx >= len(l.itemPositions) {
+			if len(l.itemPositions) != l.items.Len() || l.shouldCalculateItemPositions {
+				l.calculateItemPositions()
+				l.shouldCalculateItemPositions = false
+				if inx >= len(l.itemPositions) {
+					return nil
+				}
+			} else {
 				return nil
 			}
-			if inx >= len(l.itemPositions) {
-				continue
-			}
-			renderedItem := l.itemPositions[inx]
-
-			// If the item is bigger than the viewport, select it
-			if renderedItem.start <= start && renderedItem.end >= end {
-				l.selectedIndex = inx
-				return l.renderWithScrollToSelection(false)
-			}
-			// item is in the view
-			if renderedItem.start >= start && renderedItem.start <= end {
-				l.selectedIndex = inx
-				return l.renderWithScrollToSelection(false)
-			}
 		}
+		renderedItem := l.itemPositions[inx]
+		if renderedItem.start <= start && renderedItem.end >= end {
+			l.selectedIndex = inx
+			return l.renderWithScrollToSelection(false)
+		}
+		if renderedItem.start >= start && renderedItem.start <= end {
+			l.selectedIndex = inx
+			return l.renderWithScrollToSelection(false)
+		}
+		return nil
 	} else if itemMiddle > end {
-		// select the first item in the viewport
-		// the item is most likely an item coming after this item
-		for {
-			inx := l.firstSelectableItemAbove(l.selectedIndex)
-			if inx == ItemNotFound {
+		inx := l.firstSelectableItemAbove(l.selectedIndex)
+		if inx == ItemNotFound {
+			return nil
+		}
+		if inx >= len(l.itemPositions) {
+			if len(l.itemPositions) != l.items.Len() || l.shouldCalculateItemPositions {
+				l.calculateItemPositions()
+				l.shouldCalculateItemPositions = false
+				if inx >= len(l.itemPositions) {
+					return nil
+				}
+			} else {
 				return nil
 			}
-			if inx >= len(l.itemPositions) {
-				continue
-			}
-			renderedItem := l.itemPositions[inx]
-
-			// If the item is bigger than the viewport, select it
-			if renderedItem.start <= start && renderedItem.end >= end {
-				l.selectedIndex = inx
-				return l.renderWithScrollToSelection(false)
-			}
-			// item is in the view
-			if renderedItem.end >= start && renderedItem.end <= end {
-				l.selectedIndex = inx
-				return l.renderWithScrollToSelection(false)
-			}
 		}
+		renderedItem := l.itemPositions[inx]
+		if renderedItem.start <= start && renderedItem.end >= end {
+			l.selectedIndex = inx
+			return l.renderWithScrollToSelection(false)
+		}
+		if renderedItem.end >= start && renderedItem.end <= end {
+			l.selectedIndex = inx
+			return l.renderWithScrollToSelection(false)
+		}
+		return nil
 	}
 	return nil
 }
@@ -891,58 +902,6 @@ func (l *list[T]) calculateItemPositions() {
 	l.virtualHeight = currentHeight
 }
 
-// updateItemPosition updates a single item's position and adjusts subsequent items.
-// This is O(n) in worst case but only for items after the changed one.
-func (l *list[T]) updateItemPosition(index int) {
-	itemsLen := l.items.Len()
-	if index < 0 || index >= itemsLen {
-		return
-	}
-
-	item, ok := l.items.Get(index)
-	if !ok {
-		return
-	}
-
-	// Get new height
-	view := item.View()
-	l.viewCache.Set(item.ID(), view)
-	newHeight := lipgloss.Height(view)
-
-	// If height hasn't changed, no need to update
-	if index < len(l.itemPositions) && l.itemPositions[index].height == newHeight {
-		return
-	}
-
-	// Calculate starting position (from previous item or 0)
-	var startPos int
-	if index > 0 {
-		startPos = l.itemPositions[index-1].end + 1 + l.gap
-	}
-
-	// Update this item
-	oldHeight := 0
-	if index < len(l.itemPositions) {
-		oldHeight = l.itemPositions[index].height
-	}
-	heightDiff := newHeight - oldHeight
-
-	l.itemPositions[index] = itemPosition{
-		height: newHeight,
-		start:  startPos,
-		end:    startPos + newHeight - 1,
-	}
-
-	// Update all subsequent items' positions (shift by heightDiff)
-	for i := index + 1; i < len(l.itemPositions); i++ {
-		l.itemPositions[i].start += heightDiff
-		l.itemPositions[i].end += heightDiff
-	}
-
-	// Update total height
-	l.virtualHeight += heightDiff
-}
-
 // renderVirtualScrolling renders only the visible portion of the list.
 func (l *list[T]) renderVirtualScrolling() string {
 	if l.items.Len() == 0 {
@@ -966,7 +925,7 @@ func (l *list[T]) renderVirtualScrolling() string {
 	}
 
 	itemsLen := l.items.Len()
-	for i := 0; i < itemsLen; i++ {
+	for i := range itemsLen {
 		if i >= len(l.itemPositions) {
 			continue
 		}
@@ -1013,7 +972,7 @@ func (l *list[T]) renderVirtualScrolling() string {
 		// Add gap lines before item if needed (except for first visible item)
 		if idx > 0 && currentLine < vis.pos.start {
 			gapLines := vis.pos.start - currentLine
-			for i := 0; i < gapLines; i++ {
+			for range gapLines {
 				lines = append(lines, "")
 			}
 			currentLine = vis.pos.start
@@ -1055,6 +1014,7 @@ func (l *list[T]) renderVirtualScrolling() string {
 		}
 		if len(lines) > initialLen {
 			// Added padding lines
+			// TODO: ?
 		}
 
 		// Trim to viewport height
@@ -1067,6 +1027,7 @@ func (l *list[T]) renderVirtualScrolling() string {
 	resultHeight := lipgloss.Height(result)
 	if resultHeight < l.height && len(visibleItems) > 0 {
 		// Warning: rendered fewer lines than viewport
+		// TODO: ?
 	}
 	return result
 }
