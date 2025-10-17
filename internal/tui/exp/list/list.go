@@ -288,7 +288,7 @@ func (l *list[T]) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 
 		for inx, item := range slices.Collect(l.items.Seq()) {
-			if i, ok := any(item).(HasAnim); ok && i.Spinning() {
+			if i, ok := any(item).(HasAnim); ok {
 				// Check if item is visible
 				isVisible := false
 				if inx < len(l.itemPositions) {
