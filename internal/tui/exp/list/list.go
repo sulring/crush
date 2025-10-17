@@ -859,7 +859,7 @@ func (l *list[T]) calculateItemPositions() {
 
 	currentHeight := 0
 	// Always calculate positions in forward order (logical positions)
-	for i := 0; i < itemsLen; i++ {
+	for i := range itemsLen {
 		item, ok := l.items.Get(i)
 		if !ok {
 			continue
@@ -1498,9 +1498,13 @@ func (l *list[T]) reset(selectedItemID string) tea.Cmd {
 
 // SetSize implements List.
 func (l *list[T]) SetSize(width int, height int) tea.Cmd {
-	oldWidth := l.width
-	l.width = width
-	l.height = height
+	oldWidth, oldHeight := l.width, l.height
+	l.width, l.height = width, height
+	if oldWidth != width || oldHeight != height {
+		l.renderMu.Lock()
+		l.rendered = l.renderVirtualScrolling()
+		l.renderMu.Unlock()
+	}
 	if oldWidth != width {
 		// Get current selected item ID to preserve selection
 		var selectedID string
