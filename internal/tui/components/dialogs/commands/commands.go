@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"os"
 	"slices"
 	"strings"
@@ -31,12 +30,12 @@ const (
 	defaultWidth int = 70
 )
 
-type CommandType uint
+type commandType uint
 
-func (c CommandType) String() string { return []string{"System", "User", "MCP"}[c] }
+func (c commandType) String() string { return []string{"System", "User", "MCP"}[c] }
 
 const (
-	SystemCommands CommandType = iota
+	SystemCommands commandType = iota
 	UserCommands
 	MCPPrompts
 )
@@ -65,12 +64,10 @@ type commandDialogCmp struct {
 	commandList  listModel
 	keyMap       CommandsDialogKeyMap
 	help         help.Model
-	selected     CommandType           // Selected SystemCommands, UserCommands, or MCPPrompts
+	selected     commandType           // Selected SystemCommands, UserCommands, or MCPPrompts
 	userCommands []Command             // User-defined commands
 	mcpPrompts   *csync.Slice[Command] // MCP prompts
 	sessionID    string                // Current session ID
-	ctx          context.Context
-	cancel       context.CancelFunc
 }
 
 type (
@@ -129,9 +126,6 @@ func (c *commandDialogCmp) Init() tea.Cmd {
 	}
 	c.userCommands = commands
 	c.mcpPrompts.SetSlice(loadMCPPrompts())
-
-	// Subscribe to MCP events
-	c.ctx, c.cancel = context.WithCancel(context.Background())
 	return c.setCommandType(c.selected)
 }
 
@@ -162,9 +156,6 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return c, nil // No item selected, do nothing
 			}
 			command := (*selectedItem).Value()
-			if c.cancel != nil {
-				c.cancel()
-			}
 			return c, tea.Sequence(
 				util.CmdHandler(dialogs.CloseDialogMsg{}),
 				command.Handler(command),
@@ -175,9 +166,6 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return c, c.setCommandType(c.next())
 		case key.Matches(msg, c.keyMap.Close):
-			if c.cancel != nil {
-				c.cancel()
-			}
 			return c, util.CmdHandler(dialogs.CloseDialogMsg{})
 		default:
 			u, cmd := c.commandList.Update(msg)
@@ -188,7 +176,7 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return c, nil
 }
 
-func (c *commandDialogCmp) next() CommandType {
+func (c *commandDialogCmp) next() commandType {
 	switch c.selected {
 	case SystemCommands:
 		if len(c.userCommands) > 0 {
@@ -243,7 +231,7 @@ func (c *commandDialogCmp) Cursor() *tea.Cursor {
 func (c *commandDialogCmp) commandTypeRadio() string {
 	t := styles.CurrentTheme()
 
-	fn := func(i CommandType) string {
+	fn := func(i commandType) string {
 		if i == c.selected {
 			return "◉ " + i.String()
 		}
@@ -266,7 +254,7 @@ func (c *commandDialogCmp) listWidth() int {
 	return defaultWidth - 2 // 4 for padding
 }
 
-func (c *commandDialogCmp) setCommandType(commandType CommandType) tea.Cmd {
+func (c *commandDialogCmp) setCommandType(commandType commandType) tea.Cmd {
 	c.selected = commandType
 
 	var commands []Command
