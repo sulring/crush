@@ -134,6 +134,43 @@ func (c *Client) Memorize(ctx context.Context, projectID uuid.UUID, msgs []fanta
 	return echoed, nil
 }
 
+// ProjectMemories fetches memory bullets for a project using optional query, type filters and limit.
+func (c *Client) ProjectMemories(ctx context.Context, projectID uuid.UUID, query string, types []string, limit int) ([]string, error) {
+	endpoint := c.BaseURL.JoinPath("api/v1", "projects", projectID.String(), "memories")
+	q := endpoint.Query()
+	if strings.TrimSpace(query) != "" {
+		q.Set("q", query)
+	}
+	for _, t := range types {
+		if strings.TrimSpace(t) != "" {
+			q.Add("type", t)
+		}
+	}
+	if limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	endpoint.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	c.addAuth(req)
+	resp, err := c.http().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("project memories: http %d", resp.StatusCode)
+	}
+	var bullets []string
+	if err := json.NewDecoder(resp.Body).Decode(&bullets); err != nil {
+		return nil, err
+	}
+	return bullets, nil
+}
+
 func (c *Client) http() *http.Client {
 	if c.HTTPClient != nil {
 		return c.HTTPClient
