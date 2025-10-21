@@ -927,11 +927,15 @@ func (p *chatPage) Help() help.KeyMap {
 			key.WithKeys("ctrl+p"),
 			key.WithHelp("ctrl+p", "commands"),
 		)
+		modelsBinding := key.NewBinding(
+			key.WithKeys("alt+m"),
+			key.WithHelp("alt+m", "models"),
+		)
 		helpBinding := key.NewBinding(
 			key.WithKeys("ctrl+g"),
 			key.WithHelp("ctrl+g", "more"),
 		)
-		globalBindings = append(globalBindings, commandsBinding)
+		globalBindings = append(globalBindings, commandsBinding, modelsBinding)
 		globalBindings = append(globalBindings,
 			key.NewBinding(
 				key.WithKeys("ctrl+s"),
@@ -948,6 +952,7 @@ func (p *chatPage) Help() help.KeyMap {
 		shortList = append(shortList,
 			// Commands
 			commandsBinding,
+			modelsBinding,
 		)
 		fullList = append(fullList, globalBindings)
 
