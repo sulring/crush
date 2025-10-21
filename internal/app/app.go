@@ -352,7 +352,7 @@ func (app *App) Shutdown() {
 func (app *App) checkForUpdates(ctx context.Context) {
 	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	info, err := update.Check(checkCtx)
+	info, err := update.Check(checkCtx, update.Default)
 	if err != nil || !info.Available() {
 		return
 	}

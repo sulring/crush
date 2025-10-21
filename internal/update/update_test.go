@@ -1,6 +1,7 @@
 package update
 
 import (
+	"context"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/version"
@@ -14,7 +15,7 @@ func TestCheckForUpdate_DevelopmentVersion(t *testing.T) {
 		version.Version = originalVersion
 	})
 
-	info, err := Check(t.Context())
+	info, err := Check(t.Context(), testClient{})
 	require.NoError(t, err)
 	require.NotNil(t, info)
 	require.False(t, info.Available())
@@ -26,8 +27,18 @@ func TestCheckForUpdate_Old(t *testing.T) {
 	t.Cleanup(func() {
 		version.Version = originalVersion
 	})
-	info, err := Check(t.Context())
+	info, err := Check(t.Context(), testClient{})
 	require.NoError(t, err)
 	require.NotNil(t, info)
 	require.True(t, info.Available())
+}
+
+type testClient struct{}
+
+// Latest implements Client.
+func (t testClient) Latest(ctx context.Context) (*Release, error) {
+	return &Release{
+		TagName: "v0.11.0",
+		HTMLURL: "https://example.org",
+	}, nil
 }

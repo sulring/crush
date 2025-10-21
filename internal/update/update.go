@@ -17,6 +17,9 @@ const (
 	userAgent    = "crush/1.0"
 )
 
+// Default is the default [Client].
+var Default Client = &github{}
+
 // Info contains information about an available update.
 type Info struct {
 	CurrentVersion string
@@ -24,10 +27,11 @@ type Info struct {
 	ReleaseURL     string
 }
 
+// Available returns true if there's an update available.
 func (i Info) Available() bool { return i.CurrentVersion != i.LatestVersion }
 
 // Check checks if a new version is available.
-func Check(ctx context.Context) (Info, error) {
+func Check(ctx context.Context, client Client) (Info, error) {
 	info := Info{
 		CurrentVersion: version.Version,
 		LatestVersion:  version.Version,
@@ -37,7 +41,7 @@ func Check(ctx context.Context) (Info, error) {
 		return info, nil
 	}
 
-	release, err := fetchLatestRelease(ctx)
+	release, err := client.Latest(ctx)
 	if err != nil {
 		return info, fmt.Errorf("failed to fetch latest release: %w", err)
 	}
@@ -47,14 +51,21 @@ func Check(ctx context.Context) (Info, error) {
 	return info, nil
 }
 
-// githubRelease represents a GitHub release.
-type githubRelease struct {
+// Release represents a GitHub release.
+type Release struct {
 	TagName string `json:"tag_name"`
 	HTMLURL string `json:"html_url"`
 }
 
-// fetchLatestRelease fetches the latest release information from GitHub.
-func fetchLatestRelease(ctx context.Context) (*githubRelease, error) {
+// Client is a client that can get the latest release.
+type Client interface {
+	Latest(ctx context.Context) (*Release, error)
+}
+
+type github struct{}
+
+// Latest implements [Client].
+func (c *github) Latest(ctx context.Context) (*Release, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
@@ -77,7 +88,7 @@ func fetchLatestRelease(ctx context.Context) (*githubRelease, error) {
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var release githubRelease
+	var release Release
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return nil, err
 	}
