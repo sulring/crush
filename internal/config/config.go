@@ -197,11 +197,12 @@ type TUIOptions struct {
 	Completions Completions `json:"completions,omitzero" jsonschema:"description=Completions UI options"`
 }
 
-func (o *TUIOptions) merge(t TUIOptions) {
+func (o TUIOptions) merge(t TUIOptions) TUIOptions {
 	o.CompactMode = o.CompactMode || t.CompactMode
 	o.DiffMode = cmp.Or(t.DiffMode, o.DiffMode)
 	o.Completions.MaxDepth = cmp.Or(t.Completions.MaxDepth, o.Completions.MaxDepth)
 	o.Completions.MaxItems = cmp.Or(t.Completions.MaxDepth, o.Completions.MaxDepth)
+	return o
 }
 
 // Completions defines options for the completions UI.
@@ -237,7 +238,7 @@ type Options struct {
 	DisableMetrics            bool         `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
 }
 
-func (o *Options) merge(t Options) {
+func (o Options) merge(t Options) Options {
 	o.ContextPaths = append(o.ContextPaths, t.ContextPaths...)
 	o.Debug = o.Debug || t.Debug
 	o.DebugLSP = o.DebugLSP || t.DebugLSP
@@ -245,12 +246,13 @@ func (o *Options) merge(t Options) {
 	o.DisableMetrics = o.DisableMetrics || t.DisableMetrics
 	o.DataDirectory = cmp.Or(t.DataDirectory, o.DataDirectory)
 	o.DisabledTools = append(o.DisabledTools, t.DisabledTools...)
-	o.TUI.merge(*t.TUI)
+	*o.TUI = o.TUI.merge(*t.TUI)
 	if t.Attribution != nil {
 		o.Attribution = &Attribution{}
 		o.Attribution.CoAuthoredBy = o.Attribution.CoAuthoredBy || t.Attribution.CoAuthoredBy
 		o.Attribution.GeneratedWith = o.Attribution.GeneratedWith || t.Attribution.GeneratedWith
 	}
+	return o
 }
 
 type MCPs map[string]MCPConfig
@@ -347,9 +349,10 @@ type Tools struct {
 	Ls ToolLs `json:"ls,omitzero"`
 }
 
-func (o *Tools) merge(t Tools) {
+func (o Tools) merge(t Tools) Tools {
 	o.Ls.MaxDepth = cmp.Or(t.Ls.MaxDepth, o.Ls.MaxDepth)
 	o.Ls.MaxItems = cmp.Or(t.Ls.MaxDepth, o.Ls.MaxDepth)
+	return o
 }
 
 type ToolLs struct {
@@ -391,7 +394,7 @@ type Config struct {
 	knownProviders []catwalk.Provider `json:"-"`
 }
 
-func (c *Config) merge(t Config) {
+func (c Config) merge(t Config) Config {
 	for name, mcp := range t.MCP {
 		existing, ok := c.MCP[name]
 		if !ok {
@@ -412,7 +415,7 @@ func (c *Config) merge(t Config) {
 	maps.Copy(c.Models, t.Models)
 	c.Schema = cmp.Or(c.Schema, t.Schema)
 	if t.Options != nil {
-		c.Options.merge(*t.Options)
+		*c.Options = c.Options.merge(*t.Options)
 	}
 	if t.Permissions != nil {
 		c.Permissions.AllowedTools = append(c.Permissions.AllowedTools, t.Permissions.AllowedTools...)
@@ -422,9 +425,9 @@ func (c *Config) merge(t Config) {
 			c.Providers.Set(key, value)
 		}
 	}
-	tools := &c.Tools
-	tools.merge(t.Tools)
-	c.Tools = *tools
+	c.Tools = c.Tools.merge(t.Tools)
+
+	return c
 }
 
 func (c *Config) WorkingDir() string {

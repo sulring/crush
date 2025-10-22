@@ -569,7 +569,7 @@ func loadFromReaders(readers []io.Reader) (*Config, error) {
 		if err := json.Unmarshal(bts, &config); err != nil {
 			return nil, err
 		}
-		result.merge(*config)
+		*result = result.merge(*config)
 	}
 	return result, nil
 }
