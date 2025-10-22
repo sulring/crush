@@ -1,6 +1,15 @@
 {
   "$schema": "https://charm.land/crush.json",
+  "gopls": {
+    "args": [
+      "mcp"
+    ]
+  },
   "lsp": {
-    "gopls": {}
+    "gopls": {
+      "args": [
+        "server"
+      ]
+    }
   }
 }
