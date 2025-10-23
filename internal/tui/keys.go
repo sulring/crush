@@ -34,7 +34,7 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+z", "suspend"),
 		),
 		Models: key.NewBinding(
-			key.WithKeys("ctrl+l"),
+			key.WithKeys("ctrl+l", "ctrl+m"),
 			key.WithHelp("ctrl+l", "models"),
 		),
 		Sessions: key.NewBinding(
