@@ -11,7 +11,6 @@ import (
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/llm/tools"
 )
 
 func CoderPrompt(p string, contextFiles ...string) string {
@@ -53,7 +52,6 @@ func getEnvironmentInfo() string {
 	isGit := isGitRepo(cwd)
 	platform := runtime.GOOS
 	date := time.Now().Format("1/2/2006")
-	output, _, _ := tools.ListDirectoryTree(cwd, tools.LSParams{})
 	return fmt.Sprintf(`Here is useful information about the environment you are running in:
 <env>
 Working directory: %s
@@ -61,10 +59,7 @@ Is directory a git repo: %s
 Platform: %s
 Today's date: %s
 </env>
-<project>
-%s
-</project>
-		`, cwd, boolToYesNo(isGit), platform, date, output)
+		`, cwd, boolToYesNo(isGit), platform, date)
 }
 
 func isGitRepo(dir string) bool {
