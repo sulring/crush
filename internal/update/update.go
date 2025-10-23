@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/charmbracelet/crush/internal/version"
 )
 
 const (
@@ -22,22 +20,41 @@ var Default Client = &github{}
 
 // Info contains information about an available update.
 type Info struct {
-	CurrentVersion string
-	LatestVersion  string
-	ReleaseURL     string
+	Current string
+	Latest  string
+	URL     string
 }
 
 // Available returns true if there's an update available.
-func (i Info) Available() bool { return i.CurrentVersion != i.LatestVersion }
+//
+// If both current and latest are stable versions, returns true if versions are
+// different.
+// If current is a pre-release and latest isn't, returns true.
+// If latest is a pre-release and current isn't, returns false.
+func (i Info) Available() bool {
+	cpr := strings.Contains(i.Current, "-")
+	lpr := strings.Contains(i.Latest, "-")
+	// current is pre release
+	if cpr {
+		// latest isn't a prerelease
+		if !lpr {
+			return true
+		}
+	}
+	if lpr && !cpr {
+		return false
+	}
+	return i.Current != i.Latest
+}
 
 // Check checks if a new version is available.
-func Check(ctx context.Context, client Client) (Info, error) {
+func Check(ctx context.Context, current string, client Client) (Info, error) {
 	info := Info{
-		CurrentVersion: version.Version,
-		LatestVersion:  version.Version,
+		Current: current,
+		Latest:  current,
 	}
 
-	if info.CurrentVersion == "devel" || info.CurrentVersion == "unknown" {
+	if info.Current == "devel" || info.Current == "unknown" {
 		return info, nil
 	}
 
@@ -46,8 +63,8 @@ func Check(ctx context.Context, client Client) (Info, error) {
 		return info, fmt.Errorf("failed to fetch latest release: %w", err)
 	}
 
-	info.LatestVersion = strings.TrimPrefix(release.TagName, "v")
-	info.ReleaseURL = release.HTMLURL
+	info.Latest = strings.TrimPrefix(release.TagName, "v")
+	info.URL = release.HTMLURL
 	return info, nil
 }
 
