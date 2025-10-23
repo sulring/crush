@@ -928,9 +928,15 @@ func (p *chatPage) Help() help.KeyMap {
 			key.WithHelp("ctrl+p", "commands"),
 		)
 		modelsBinding := key.NewBinding(
-			key.WithKeys("alt+m"),
-			key.WithHelp("alt+m", "models"),
+			key.WithKeys("ctrl+l"),
+			key.WithHelp("ctrl+l", "models"),
 		)
+		if p.keyboardEnhancements.SupportsKeyDisambiguation() {
+			modelsBinding = key.NewBinding(
+				key.WithKeys("ctrl+m"),
+				key.WithHelp("ctrl+m", "models"),
+			)
+		}
 		helpBinding := key.NewBinding(
 			key.WithKeys("ctrl+g"),
 			key.WithHelp("ctrl+g", "more"),

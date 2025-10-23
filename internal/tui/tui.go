@@ -104,6 +104,12 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyboardEnhancementsMsg:
+		if msg.SupportsKeyDisambiguation() {
+			a.keyMap.Models = key.NewBinding(
+				key.WithKeys("ctrl+m"),
+				key.WithHelp("ctrl+m", "models"),
+			)
+		}
 		for id, page := range a.pages {
 			m, pageCmd := page.Update(msg)
 			if model, ok := m.(util.Model); ok {
