@@ -86,6 +86,7 @@ var DeleteKeyMaps = DeleteAttachmentKeyMaps{
 
 const (
 	maxAttachments = 5
+	maxFileResults = 25
 )
 
 type OpenEditorMsg struct {
@@ -171,7 +172,7 @@ func (m *editorCmp) repositionCompletions() tea.Msg {
 	return completions.RepositionCompletionsMsg{X: x, Y: y}
 }
 
-func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *editorCmp) Update(msg tea.Msg) (util.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
@@ -500,6 +501,7 @@ func (m *editorCmp) startCompletions() tea.Msg {
 		Completions: completionItems,
 		X:           x,
 		Y:           y,
+		MaxResults:  maxFileResults,
 	}
 }
 
