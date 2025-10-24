@@ -23,7 +23,7 @@ type diagnosticsTool struct {
 	lspClients *csync.Map[string, *lsp.Client]
 }
 
-const DiagnosticsToolName = "diagnostics"
+const DiagnosticsToolName = "lsp_diagnostics"
 
 //go:embed diagnostics.md
 var diagnosticsDescription []byte
@@ -122,7 +122,7 @@ func getDiagnostics(filePath string, lsps *csync.Map[string, *lsp.Client]) strin
 	}
 
 	out := output.String()
-	slog.Info("Diagnostics", "output", fmt.Sprintf("%q", out))
+	slog.Info("Diagnostics", "output", out)
 	return out
 }
 

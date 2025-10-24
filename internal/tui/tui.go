@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -90,8 +91,6 @@ func (a appModel) Init() tea.Cmd {
 	cmd = a.status.Init()
 	cmds = append(cmds, cmd)
 
-	cmds = append(cmds, tea.EnableMouseAllMotion)
-
 	return tea.Batch(cmds...)
 }
 
@@ -105,9 +104,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyboardEnhancementsMsg:
 		for id, page := range a.pages {
 			m, pageCmd := page.Update(msg)
-			if model, ok := m.(util.Model); ok {
-				a.pages[id] = model
-			}
+			a.pages[id] = m
 
 			if pageCmd != nil {
 				cmds = append(cmds, pageCmd)
@@ -231,9 +228,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Forward to view.
 		updated, itemCmd := item.Update(msg)
-		if model, ok := updated.(util.Model); ok {
-			a.pages[a.currentPage] = model
-		}
+		a.pages[a.currentPage] = updated
 
 		return a, itemCmd
 	case pubsub.Event[permission.PermissionRequest]:
@@ -291,9 +286,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		a.isConfigured = config.HasInitialDataConfig()
 		updated, pageCmd := item.Update(msg)
-		if model, ok := updated.(util.Model); ok {
-			a.pages[a.currentPage] = model
-		}
+		a.pages[a.currentPage] = updated
 
 		cmds = append(cmds, pageCmd)
 		return a, tea.Batch(cmds...)
@@ -313,9 +306,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			updated, pageCmd := item.Update(msg)
-			if model, ok := updated.(util.Model); ok {
-				a.pages[a.currentPage] = model
-			}
+			a.pages[a.currentPage] = updated
 
 			cmds = append(cmds, pageCmd)
 		}
@@ -335,9 +326,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			updated, pageCmd := item.Update(msg)
-			if model, ok := updated.(util.Model); ok {
-				a.pages[a.currentPage] = model
-			}
+			a.pages[a.currentPage] = updated
 
 			cmds = append(cmds, pageCmd)
 		}
@@ -352,9 +341,7 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	updated, cmd := item.Update(msg)
-	if model, ok := updated.(util.Model); ok {
-		a.pages[a.currentPage] = model
-	}
+	a.pages[a.currentPage] = updated
 
 	if a.dialog.HasDialogs() {
 		u, dialogCmd := a.dialog.Update(msg)
@@ -390,9 +377,7 @@ func (a *appModel) handleWindowResize(width, height int) tea.Cmd {
 	// Update the current view.
 	for p, page := range a.pages {
 		updated, pageCmd := page.Update(tea.WindowSizeMsg{Width: width, Height: height})
-		if model, ok := updated.(util.Model); ok {
-			a.pages[p] = model
-		}
+		a.pages[p] = updated
 
 		cmds = append(cmds, pageCmd)
 	}
@@ -495,9 +480,7 @@ func (a *appModel) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		}
 
 		updated, cmd := item.Update(msg)
-		if model, ok := updated.(util.Model); ok {
-			a.pages[a.currentPage] = model
-		}
+		a.pages[a.currentPage] = updated
 		return cmd
 	}
 }
@@ -603,6 +586,13 @@ func (a *appModel) View() tea.View {
 
 	view.Layer = canvas
 	view.Cursor = cursor
+	view.MouseMode = tea.MouseModeCellMotion
+	view.AltScreen = true
+	if a.app != nil && a.app.CoderAgent != nil && a.app.CoderAgent.IsBusy() {
+		// HACK: use a random percentage to prevent ghostty from hiding it
+		// after a timeout.
+		view.ProgressBar = tea.NewProgressBar(tea.ProgressBarIndeterminate, rand.Intn(100))
+	}
 	return view
 }
 

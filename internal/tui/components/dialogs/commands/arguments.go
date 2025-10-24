@@ -92,7 +92,7 @@ func (c *commandArgumentsDialogCmp) Init() tea.Cmd {
 }
 
 // Update implements CommandArgumentsDialog.
-func (c *commandArgumentsDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (c *commandArgumentsDialogCmp) Update(msg tea.Msg) (util.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		c.wWidth = msg.Width
@@ -128,12 +128,17 @@ func (c *commandArgumentsDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.inputs[c.focusIndex].Blur()
 			c.focusIndex = (c.focusIndex - 1 + len(c.inputs)) % len(c.inputs)
 			c.inputs[c.focusIndex].Focus()
-
+		case key.Matches(msg, c.keys.Close):
+			return c, util.CmdHandler(dialogs.CloseDialogMsg{})
 		default:
 			var cmd tea.Cmd
 			c.inputs[c.focusIndex], cmd = c.inputs[c.focusIndex].Update(msg)
 			return c, cmd
 		}
+	case tea.PasteMsg:
+		var cmd tea.Cmd
+		c.inputs[c.focusIndex], cmd = c.inputs[c.focusIndex].Update(msg)
+		return c, cmd
 	}
 	return c, nil
 }

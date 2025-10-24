@@ -2,6 +2,10 @@
 
 version: "3"
 
+vars:
+  VERSION:
+    sh: git describe --long 2>/dev/null || echo ""
+
 env:
   CGO_ENABLED: 0
   GOEXPERIMENT: greenteagc
@@ -30,15 +34,17 @@ tasks:
 
   build:
     desc: Run build
+    vars:
+      LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
     cmds:
-      - go build .
+      - go build {{.LDFLAGS}} .
     generates:
       - crush
 
   run:
     desc: Run build
     cmds:
-      - go run .
+      - go run . {{.CLI_ARGS}}
 
   test:
     desc: Run tests
@@ -59,8 +65,10 @@ tasks:
 
   install:
     desc: Install the application
+    vars:
+      LDFLAGS: '{{if .VERSION}}-ldflags="-X github.com/charmbracelet/crush/internal/version.Version={{.VERSION}}"{{end}}'
     cmds:
-      - go install -v .
+      - go install {{.LDFLAGS}} -v .
 
   profile:cpu:
     desc: 10s CPU profile
@@ -89,7 +97,7 @@ tasks:
     desc: Create and push a new tag following semver
     vars:
       NEXT:
-        sh: go run github.com/caarlos0/svu/v3@latest next --always
+        sh: svu next --always || go run github.com/caarlos0/svu/v3@latest next --always
     prompt: "This will release {{.NEXT}}. Continue?"
     preconditions:
       - sh: '[ $(git symbolic-ref --short HEAD) = "main" ]'
@@ -97,7 +105,13 @@ tasks:
       - sh: "[ $(git status --porcelain=2 | wc -l) = 0 ]"
         msg: "Git is dirty"
     cmds:
-      - git tag -d nightly
-      - git tag --sign {{.NEXT}} {{.CLI_ARGS}}
-      - echo "pushing {{.NEXT}}..."
-      - git push origin --tags
+      - task: fetch-tags
+      - git commit --allow-empty -m "{{.NEXT}}"
+      - git tag --annotate --sign -m "{{.NEXT}}" {{.NEXT}} {{.CLI_ARGS}}
+      - echo "Pushing {{.NEXT}}..."
+      - git push origin main --follow-tags
+
+  fetch-tags:
+    cmds:
+      - git tag -d nightly || true
+      - git fetch --tags

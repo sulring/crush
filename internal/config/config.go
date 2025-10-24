@@ -99,7 +99,7 @@ type MCPType string
 
 const (
 	MCPStdio MCPType = "stdio"
-	MCPSse   MCPType = "sse"
+	MCPSSE   MCPType = "sse"
 	MCPHttp  MCPType = "http"
 )
 
@@ -132,6 +132,19 @@ type TUIOptions struct {
 	DiffMode    string `json:"diff_mode,omitempty" jsonschema:"description=Diff mode for the TUI interface,enum=unified,enum=split"`
 	Transparent bool   `json:"transparent,omitempty" jsonschema:"description=Enable transparent background for the TUI interface,default=false"`
 	// Here we can add themes later or any TUI related options
+	//
+
+	Completions Completions `json:"completions,omitzero" jsonschema:"description=Completions UI options"`
+}
+
+// Completions defines options for the completions UI.
+type Completions struct {
+	MaxDepth *int `json:"max_depth,omitempty" jsonschema:"description=Maximum depth for the ls tool,default=0,example=10"`
+	MaxItems *int `json:"max_items,omitempty" jsonschema:"description=Maximum number of items to return for the ls tool,default=1000,example=100"`
+}
+
+func (c Completions) Limits() (depth, items int) {
+	return ptrValOr(c.MaxDepth, 0), ptrValOr(c.MaxItems, 0)
 }
 
 type Permissions struct {
@@ -247,6 +260,19 @@ type Agent struct {
 	ContextPaths []string `json:"context_paths,omitempty"`
 }
 
+type Tools struct {
+	Ls ToolLs `json:"ls,omitzero"`
+}
+
+type ToolLs struct {
+	MaxDepth *int `json:"max_depth,omitempty" jsonschema:"description=Maximum depth for the ls tool,default=0,example=10"`
+	MaxItems *int `json:"max_items,omitempty" jsonschema:"description=Maximum number of items to return for the ls tool,default=1000,example=100"`
+}
+
+func (t ToolLs) Limits() (depth, items int) {
+	return ptrValOr(t.MaxDepth, 0), ptrValOr(t.MaxItems, 0)
+}
+
 // Config holds the configuration for crush.
 type Config struct {
 	Schema string `json:"$schema,omitempty"`
@@ -264,6 +290,8 @@ type Config struct {
 	Options *Options `json:"options,omitempty" jsonschema:"description=General application options"`
 
 	Permissions *Permissions `json:"permissions,omitempty" jsonschema:"description=Permission settings for tool usage"`
+
+	Tools Tools `json:"tools,omitzero" jsonschema:"description=Tool configurations"`
 
 	// Internal
 	workingDir string `json:"-"`
@@ -579,4 +607,11 @@ func resolveEnvs(envs map[string]string) []string {
 		res = append(res, fmt.Sprintf("%s=%s", k, v))
 	}
 	return res
+}
+
+func ptrValOr[T any](t *T, el T) T {
+	if t == nil {
+		return el
+	}
+	return *t
 }

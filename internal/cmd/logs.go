@@ -10,8 +10,10 @@ import (
 	"slices"
 	"time"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/log/v2"
+	"github.com/charmbracelet/x/term"
 	"github.com/nxadm/tail"
 	"github.com/spf13/cobra"
 )
@@ -45,6 +47,9 @@ var logsCmd = &cobra.Command{
 
 		log.SetLevel(log.DebugLevel)
 		log.SetOutput(os.Stdout)
+		if !term.IsTerminal(os.Stdout.Fd()) {
+			log.SetColorProfile(colorprofile.NoTTY)
+		}
 
 		cfg, err := config.Load(cwd, dataDir, false)
 		if err != nil {
@@ -68,7 +73,6 @@ var logsCmd = &cobra.Command{
 func init() {
 	logsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
 	logsCmd.Flags().IntP("tail", "t", defaultTailLines, "Show only the last N lines default: 1000 for performance")
-	rootCmd.AddCommand(logsCmd)
 }
 
 func followLogs(ctx context.Context, logsFile string, tailLines int) error {
