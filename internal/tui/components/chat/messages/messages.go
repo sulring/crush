@@ -431,5 +431,6 @@ func isReduceAnimations() bool {
 	cfg := config.Get()
 	return cfg.Options != nil &&
 		cfg.Options.TUI != nil &&
-		cfg.Options.TUI.ReduceAnimations
+		cfg.Options.TUI.ReduceAnimations != nil &&
+		*cfg.Options.TUI.ReduceAnimations
 }
