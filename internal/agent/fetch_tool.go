@@ -14,7 +14,6 @@ import (
 
 	"github.com/charmbracelet/crush/internal/agent/prompt"
 	"github.com/charmbracelet/crush/internal/agent/tools"
-	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/permission"
 )
 
@@ -25,11 +24,6 @@ var fetchToolDescription []byte
 var fetchPromptTmpl []byte
 
 func (c *coordinator) fetchTool(_ context.Context, client *http.Client) (fantasy.AgentTool, error) {
-	_, ok := c.cfg.Agents[config.AgentFetch]
-	if !ok {
-		return nil, errors.New("fetch agent not configured")
-	}
-
 	if client == nil {
 		client = &http.Client{
 			Timeout: 30 * time.Second,
