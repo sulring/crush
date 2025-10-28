@@ -891,13 +891,12 @@ func renderMarkdownContent(v *toolCallCmp, content string) string {
 	width := v.textWidth() - 2
 	width = min(width, 120)
 
-	renderer := styles.GetPlainMarkdownRenderer(width - 1)
+	renderer := styles.GetPlainMarkdownRenderer(width - 2)
 	rendered, err := renderer.Render(content)
 	if err != nil {
 		return renderPlainContent(v, content)
 	}
 
-	rendered = strings.TrimSpace(rendered)
 	lines := strings.Split(rendered, "\n")
 
 	var out []string
@@ -905,24 +904,17 @@ func renderMarkdownContent(v *toolCallCmp, content string) string {
 		if i >= responseContextHeight {
 			break
 		}
-		ln = " " + ln // left padding
-		if len(ln) > width {
-			ln = v.fit(ln, width)
-		}
-		out = append(out, t.S().Muted.
-			Width(width).
-			Background(t.BgBaseLighter).
-			Render(ln))
+		out = append(out, ln)
 	}
 
+	style := t.S().Muted.Background(t.BgBaseLighter)
 	if len(lines) > responseContextHeight {
-		out = append(out, t.S().Muted.
-			Background(t.BgBaseLighter).
-			Width(width).
+		out = append(out, style.
+			Width(width-2).
 			Render(fmt.Sprintf("… (%d lines)", len(lines)-responseContextHeight)))
 	}
 
-	return strings.Join(out, "\n")
+	return style.PaddingLeft(1).PaddingRight(1).Render(strings.Join(out, "\n"))
 }
 
 func getDigits(n int) int {
