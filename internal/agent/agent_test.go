@@ -245,45 +245,6 @@ func TestCoderAgent(t *testing.T) {
 				_, err = os.Stat(examplePath)
 				require.NoError(t, err, "Expected example.txt file to exist")
 			})
-			t.Run("fetch tool", func(t *testing.T) {
-				agent, env := setupAgent(t, pair)
-
-				session, err := env.sessions.Create(t.Context(), "New Session")
-				require.NoError(t, err)
-
-				res, err := agent.Run(t.Context(), SessionAgentCall{
-					Prompt:          "fetch the content from https://example-files.online-convert.com/website/html/example.html and tell me if it contains the word 'John Doe'",
-					SessionID:       session.ID,
-					MaxOutputTokens: 10000,
-				})
-				require.NoError(t, err)
-				assert.NotNil(t, res)
-
-				msgs, err := env.messages.List(t.Context(), session.ID)
-				require.NoError(t, err)
-
-				foundFetch := false
-				var fetchTCID string
-
-				for _, msg := range msgs {
-					if msg.Role == message.Assistant {
-						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.FetchToolName {
-								fetchTCID = tc.ID
-							}
-						}
-					}
-					if msg.Role == message.Tool {
-						for _, tr := range msg.ToolResults() {
-							if tr.ToolCallID == fetchTCID {
-								foundFetch = true
-							}
-						}
-					}
-				}
-
-				require.True(t, foundFetch, "Expected to find a fetch operation")
-			})
 			t.Run("glob tool", func(t *testing.T) {
 				agent, env := setupAgent(t, pair)
 

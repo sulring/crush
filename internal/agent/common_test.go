@@ -175,6 +175,7 @@ func coderAgent(r *recorder.Recorder, env env, large, small fantasy.LanguageMode
 		return nil, err
 	}
 	allTools := []fantasy.AgentTool{
+		tools.NewWebFetchTool(env.workingDir, r.GetDefaultClient()),
 		tools.NewBashTool(env.permissions, env.workingDir, cfg.Options.Attribution),
 		tools.NewDownloadTool(env.permissions, env.workingDir, r.GetDefaultClient()),
 		tools.NewEditTool(env.lspClients, env.permissions, env.history, env.workingDir),
