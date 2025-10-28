@@ -169,6 +169,7 @@ func init() {
 	registry.register(tools.MultiEditToolName, func() renderer { return multiEditRenderer{} })
 	registry.register(tools.WriteToolName, func() renderer { return writeRenderer{} })
 	registry.register(tools.FetchToolName, func() renderer { return fetchRenderer{} })
+	registry.register(tools.WebFetchToolName, func() renderer { return webFetchRenderer{} })
 	registry.register(tools.GlobToolName, func() renderer { return globRenderer{} })
 	registry.register(tools.GrepToolName, func() renderer { return grepRenderer{} })
 	registry.register(tools.LSToolName, func() renderer { return lsRenderer{} })
@@ -401,34 +402,88 @@ type fetchRenderer struct {
 	baseRenderer
 }
 
-// Render displays the fetched URL with format and timeout parameters
+// Render displays the fetched URL with prompt parameter and nested tool calls
 func (fr fetchRenderer) Render(v *toolCallCmp) string {
+	t := styles.CurrentTheme()
 	var params tools.FetchParams
-	var args []string
-	if err := fr.unmarshalParams(v.call.Input, &params); err == nil {
-		args = newParamBuilder().
-			addMain(params.URL).
-			addKeyValue("format", params.Format).
-			addKeyValue("timeout", formatTimeout(params.Timeout)).
-			build()
+	fr.unmarshalParams(v.call.Input, &params)
+
+	prompt := params.Prompt
+	prompt = strings.ReplaceAll(prompt, "\n", " ")
+
+	header := fr.makeHeader(v, "Fetch", v.textWidth())
+
+	// Check for error or cancelled states
+	if v.result.IsError {
+		message := v.renderToolError()
+		message = t.S().Base.PaddingLeft(2).Render(message)
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", message)
+	}
+	if v.cancelled {
+		message := t.S().Base.Foreground(t.FgSubtle).Render("Canceled.")
+		message = t.S().Base.PaddingLeft(2).Render(message)
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", message)
 	}
 
-	return fr.renderWithParams(v, "Fetch", args, func() string {
-		file := fr.getFileExtension(params.Format)
-		return renderCodeContent(v, file, v.result.Content, 0)
-	})
-}
-
-// getFileExtension returns appropriate file extension for syntax highlighting
-func (fr fetchRenderer) getFileExtension(format string) string {
-	switch format {
-	case "text":
-		return "fetch.txt"
-	case "html":
-		return "fetch.html"
-	default:
-		return "fetch.md"
+	if v.result.ToolCallID == "" && v.permissionRequested && !v.permissionGranted {
+		message := t.S().Base.Foreground(t.FgSubtle).Render("Requesting for permission...")
+		message = t.S().Base.PaddingLeft(2).Render(message)
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", message)
 	}
+
+	// Show URL and prompt like agent tool shows task
+	urlTag := t.S().Base.Padding(0, 1).MarginLeft(1).Background(t.BlueLight).Foreground(t.White).Render("URL")
+	promptTag := t.S().Base.Padding(0, 1).MarginLeft(1).Background(t.Green).Foreground(t.White).Render("Prompt")
+
+	// Calculate left gutter width (icon + spacing)
+	leftGutterWidth := lipgloss.Width(urlTag) + 2 // +2 for " " spacing
+
+	// Cap at 120 cols minus left gutter
+	maxTextWidth := 120 - leftGutterWidth
+	if v.textWidth()-leftGutterWidth < maxTextWidth {
+		maxTextWidth = v.textWidth() - leftGutterWidth
+	}
+
+	urlText := t.S().Muted.Width(maxTextWidth).Render(params.URL)
+	promptText := t.S().Muted.Width(maxTextWidth).Render(prompt)
+
+	header = lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		"",
+		lipgloss.JoinHorizontal(lipgloss.Left, urlTag, " ", urlText),
+		"",
+		lipgloss.JoinHorizontal(lipgloss.Left, promptTag, " ", promptText),
+	)
+
+	// Show nested tool calls (from sub-agent) in a tree
+	childTools := tree.Root(header)
+	for _, call := range v.nestedToolCalls {
+		childTools.Child(call.View())
+	}
+
+	parts := []string{
+		childTools.Enumerator(RoundedEnumerator).String(),
+	}
+
+	if v.result.ToolCallID == "" {
+		v.spinning = true
+		parts = append(parts, "", v.anim.View())
+	} else {
+		v.spinning = false
+	}
+
+	header = lipgloss.JoinVertical(
+		lipgloss.Left,
+		parts...,
+	)
+
+	if v.result.ToolCallID == "" {
+		return header
+	}
+
+	body := renderMarkdownContent(v, v.result.Content)
+	return joinHeaderBody(header, body)
 }
 
 // formatTimeout converts timeout seconds to duration string
@@ -437,6 +492,52 @@ func formatTimeout(timeout int) string {
 		return ""
 	}
 	return (time.Duration(timeout) * time.Second).String()
+}
+
+// -----------------------------------------------------------------------------
+//  Web fetch renderer
+// -----------------------------------------------------------------------------
+
+// webFetchRenderer handles web page fetching with simplified URL display
+type webFetchRenderer struct {
+	baseRenderer
+}
+
+// Render displays a compact view of web_fetch with just the URL in a link style
+func (wfr webFetchRenderer) Render(v *toolCallCmp) string {
+	t := styles.CurrentTheme()
+	var params tools.WebFetchParams
+	wfr.unmarshalParams(v.call.Input, &params)
+
+	width := v.textWidth()
+	if v.isNested {
+		width -= 4 // Adjust for nested tool call indentation
+	}
+
+	header := wfr.makeHeader(v, "Fetching", width)
+	if res, done := earlyState(header, v); v.cancelled && done {
+		return res
+	}
+
+	// Display URL in a subtle, link-like style
+	urlStyle := t.S().Muted.Foreground(t.Blue).Underline(true)
+	urlText := urlStyle.Render(params.URL)
+
+	header = lipgloss.JoinHorizontal(lipgloss.Left, header, " ", urlText)
+
+	// If nested, return header only (no body content)
+	if v.isNested {
+		return v.style().Render(header)
+	}
+
+	if v.result.ToolCallID == "" {
+		v.spinning = true
+		return lipgloss.JoinHorizontal(lipgloss.Left, header, " ", v.anim.View())
+	}
+
+	v.spinning = false
+	body := renderMarkdownContent(v, v.result.Content)
+	return joinHeaderBody(header, body)
 }
 
 // -----------------------------------------------------------------------------
@@ -619,7 +720,8 @@ func (tr agentRenderer) Render(v *toolCallCmp) string {
 		return res
 	}
 	taskTag := t.S().Base.Padding(0, 1).MarginLeft(1).Background(t.BlueLight).Foreground(t.White).Render("Task")
-	remainingWidth := v.textWidth() - lipgloss.Width(header) - lipgloss.Width(taskTag) - 2 // -2 for padding
+	remainingWidth := v.textWidth() - lipgloss.Width(header) - lipgloss.Width(taskTag) - 2
+	remainingWidth = min(remainingWidth, 120-lipgloss.Width(header)-lipgloss.Width(taskTag)-2)
 	prompt = t.S().Muted.Width(remainingWidth).Render(prompt)
 	header = lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -657,7 +759,7 @@ func (tr agentRenderer) Render(v *toolCallCmp) string {
 		return header
 	}
 
-	body := renderPlainContent(v, v.result.Content)
+	body := renderMarkdownContent(v, v.result.Content)
 	return joinHeaderBody(header, body)
 }
 
@@ -753,13 +855,56 @@ func renderPlainContent(v *toolCallCmp, content string) string {
 	content = strings.TrimSpace(content)
 	lines := strings.Split(content, "\n")
 
-	width := v.textWidth() - 2 // -2 for left padding
+	width := v.textWidth() - 2
 	var out []string
 	for i, ln := range lines {
 		if i >= responseContextHeight {
 			break
 		}
 		ln = ansiext.Escape(ln)
+		ln = " " + ln
+		if len(ln) > width {
+			ln = v.fit(ln, width)
+		}
+		out = append(out, t.S().Muted.
+			Width(width).
+			Background(t.BgBaseLighter).
+			Render(ln))
+	}
+
+	if len(lines) > responseContextHeight {
+		out = append(out, t.S().Muted.
+			Background(t.BgBaseLighter).
+			Width(width).
+			Render(fmt.Sprintf("… (%d lines)", len(lines)-responseContextHeight)))
+	}
+
+	return strings.Join(out, "\n")
+}
+
+func renderMarkdownContent(v *toolCallCmp, content string) string {
+	t := styles.CurrentTheme()
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = strings.ReplaceAll(content, "\t", "    ")
+	content = strings.TrimSpace(content)
+
+	width := v.textWidth() - 2
+	width = min(width, 120)
+
+	renderer := styles.GetPlainMarkdownRenderer(width - 1)
+	rendered, err := renderer.Render(content)
+	if err != nil {
+		return renderPlainContent(v, content)
+	}
+
+	rendered = strings.TrimSpace(rendered)
+	lines := strings.Split(rendered, "\n")
+
+	var out []string
+	for i, ln := range lines {
+		if i >= responseContextHeight {
+			break
+		}
 		ln = " " + ln // left padding
 		if len(ln) > width {
 			ln = v.fit(ln, width)

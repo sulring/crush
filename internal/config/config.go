@@ -51,6 +51,7 @@ const (
 const (
 	AgentCoder string = "coder"
 	AgentTask  string = "task"
+	AgentFetch string = "fetch"
 )
 
 type SelectedModel struct {
@@ -531,6 +532,19 @@ func (c *Config) SetupAgents() {
 			ContextPaths: c.Options.ContextPaths,
 			AllowedTools: resolveReadOnlyTools(allowedTools),
 			// NO MCPs or LSPs by default
+			AllowedMCP: map[string][]string{},
+		},
+
+		AgentFetch: {
+			ID:          AgentFetch,
+			Name:        "Fetch",
+			Description: "An agent that fetches and analyzes web content.",
+			Model:       SelectedModelTypeSmall,
+			// No context paths - fetch agent operates in isolated environment
+			ContextPaths: []string{},
+			// Only allow tools needed for web content analysis
+			AllowedTools: []string{"web_fetch", "grep", "glob", "view"},
+			// NO MCPs or LSPs
 			AllowedMCP: map[string][]string{},
 		},
 	}

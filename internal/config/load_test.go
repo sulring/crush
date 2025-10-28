@@ -469,6 +469,13 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 	taskAgent, ok := cfg.Agents[AgentTask]
 	require.True(t, ok)
 	assert.Equal(t, []string{"glob", "grep", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools)
+
+	fetchAgent, ok := cfg.Agents[AgentFetch]
+	require.True(t, ok)
+	assert.Equal(t, "fetch", fetchAgent.ID)
+	assert.Equal(t, SelectedModelTypeSmall, fetchAgent.Model)
+	assert.Equal(t, []string{"web_fetch", "grep", "glob", "view"}, fetchAgent.AllowedTools)
+	assert.Empty(t, fetchAgent.ContextPaths)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {

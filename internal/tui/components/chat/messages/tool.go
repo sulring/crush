@@ -289,13 +289,15 @@ func (m *toolCallCmp) formatParametersForCopy() string {
 		if json.Unmarshal([]byte(m.call.Input), &params) == nil {
 			var parts []string
 			parts = append(parts, fmt.Sprintf("**URL:** %s", params.URL))
-			if params.Format != "" {
-				parts = append(parts, fmt.Sprintf("**Format:** %s", params.Format))
-			}
-			if params.Timeout > 0 {
-				parts = append(parts, fmt.Sprintf("**Timeout:** %s", (time.Duration(params.Timeout)*time.Second).String()))
+			if params.Prompt != "" {
+				parts = append(parts, fmt.Sprintf("**Prompt:** %s", params.Prompt))
 			}
 			return strings.Join(parts, "\n")
+		}
+	case tools.WebFetchToolName:
+		var params tools.WebFetchParams
+		if json.Unmarshal([]byte(m.call.Input), &params) == nil {
+			return fmt.Sprintf("**URL:** %s", params.URL)
 		}
 	case tools.GrepToolName:
 		var params tools.GrepParams
@@ -395,6 +397,8 @@ func (m *toolCallCmp) formatResultForCopy() string {
 		return m.formatWriteResultForCopy()
 	case tools.FetchToolName:
 		return m.formatFetchResultForCopy()
+	case tools.WebFetchToolName:
+		return m.formatWebFetchResultForCopy()
 	case agent.AgentToolName:
 		return m.formatAgentResultForCopy()
 	case tools.DownloadToolName, tools.GrepToolName, tools.GlobToolName, tools.LSToolName, tools.SourcegraphToolName, tools.DiagnosticsToolName:
@@ -608,15 +612,26 @@ func (m *toolCallCmp) formatFetchResultForCopy() string {
 	if params.URL != "" {
 		result.WriteString(fmt.Sprintf("URL: %s\n", params.URL))
 	}
-
-	switch params.Format {
-	case "html":
-		result.WriteString("```html\n")
-	case "text":
-		result.WriteString("```\n")
-	default: // markdown
-		result.WriteString("```markdown\n")
+	if params.Prompt != "" {
+		result.WriteString(fmt.Sprintf("Prompt: %s\n\n", params.Prompt))
 	}
+
+	result.WriteString("```markdown\n")
+	result.WriteString(m.result.Content)
+	result.WriteString("\n```")
+
+	return result.String()
+}
+
+func (m *toolCallCmp) formatWebFetchResultForCopy() string {
+	var params tools.WebFetchParams
+	if json.Unmarshal([]byte(m.call.Input), &params) != nil {
+		return m.result.Content
+	}
+
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("URL: %s\n\n", params.URL))
+	result.WriteString("```markdown\n")
 	result.WriteString(m.result.Content)
 	result.WriteString("\n```")
 
