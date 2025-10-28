@@ -514,7 +514,7 @@ func (wfr webFetchRenderer) Render(v *toolCallCmp) string {
 		width -= 4 // Adjust for nested tool call indentation
 	}
 
-	header := wfr.makeHeader(v, "Fetching", width)
+	header := wfr.makeHeader(v, "Fetch", width)
 	if res, done := earlyState(header, v); v.cancelled && done {
 		return res
 	}
@@ -1011,6 +1011,8 @@ func prettifyToolName(name string) string {
 		return "Multi-Edit"
 	case tools.FetchToolName:
 		return "Fetch"
+	case tools.WebFetchToolName:
+		return "Fetching"
 	case tools.GlobToolName:
 		return "Glob"
 	case tools.GrepToolName:
