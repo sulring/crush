@@ -82,7 +82,7 @@ func (c *coordinator) fetchTool(_ context.Context, client *http.Client) (fantasy
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to fetch URL: %s", err)), nil
 			}
 
-			tmpDir, err := os.MkdirTemp("", "crush-fetch-*")
+			tmpDir, err := os.MkdirTemp(c.cfg.Options.DataDirectory, "crush-fetch-*")
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to create temporary directory: %s", err)), nil
 			}

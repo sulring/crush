@@ -406,64 +406,44 @@ type fetchRenderer struct {
 func (fr fetchRenderer) Render(v *toolCallCmp) string {
 	t := styles.CurrentTheme()
 	var params tools.FetchParams
-	fr.unmarshalParams(v.call.Input, &params)
+	var args []string
+	if err := fr.unmarshalParams(v.call.Input, &params); err == nil {
+		args = newParamBuilder().
+			addMain(params.URL).
+			build()
+	}
 
 	prompt := params.Prompt
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
 
-	header := fr.makeHeader(v, "Fetch", v.textWidth())
-
-	// Check for error or cancelled states
-	if v.result.IsError {
-		message := v.renderToolError()
-		message = t.S().Base.PaddingLeft(2).Render(message)
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", message)
-	}
-	if v.cancelled {
-		message := t.S().Base.Foreground(t.FgSubtle).Render("Canceled.")
-		message = t.S().Base.PaddingLeft(2).Render(message)
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", message)
+	header := fr.makeHeader(v, "Fetch", v.textWidth(), args...)
+	if res, done := earlyState(header, v); v.cancelled && done {
+		return res
 	}
 
-	if v.result.ToolCallID == "" && v.permissionRequested && !v.permissionGranted {
-		message := t.S().Base.Foreground(t.FgSubtle).Render("Requesting for permission...")
-		message = t.S().Base.PaddingLeft(2).Render(message)
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", message)
-	}
-
-	// Show URL and prompt like agent tool shows task
-	urlTag := t.S().Base.Padding(0, 1).MarginLeft(1).Background(t.BlueLight).Foreground(t.White).Render("URL")
-	promptTag := t.S().Base.Padding(0, 1).MarginLeft(1).Background(t.Green).Foreground(t.White).Render("Prompt")
-
-	// Calculate left gutter width (icon + spacing)
-	leftGutterWidth := lipgloss.Width(urlTag) + 2 // +2 for " " spacing
-
-	// Cap at 120 cols minus left gutter
-	maxTextWidth := 120 - leftGutterWidth
-	if v.textWidth()-leftGutterWidth < maxTextWidth {
-		maxTextWidth = v.textWidth() - leftGutterWidth
-	}
-
-	urlText := t.S().Muted.Width(maxTextWidth).Render(params.URL)
-	promptText := t.S().Muted.Width(maxTextWidth).Render(prompt)
-
+	taskTag := t.S().Base.Padding(0, 1).MarginLeft(2).Background(t.GreenLight).Foreground(t.White).Render("Prompt")
+	remainingWidth := v.textWidth() - (lipgloss.Width(taskTag) + 1)
+	remainingWidth = min(remainingWidth, 120-(lipgloss.Width(taskTag)+1))
+	prompt = t.S().Muted.Width(remainingWidth).Render(prompt)
 	header = lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		"",
-		lipgloss.JoinHorizontal(lipgloss.Left, urlTag, " ", urlText),
-		"",
-		lipgloss.JoinHorizontal(lipgloss.Left, promptTag, " ", promptText),
+		lipgloss.JoinHorizontal(
+			lipgloss.Left,
+			taskTag,
+			" ",
+			prompt,
+		),
 	)
-
-	// Show nested tool calls (from sub-agent) in a tree
 	childTools := tree.Root(header)
+
 	for _, call := range v.nestedToolCalls {
+		call.SetSize(remainingWidth, 1)
 		childTools.Child(call.View())
 	}
-
 	parts := []string{
-		childTools.Enumerator(RoundedEnumerator).String(),
+		childTools.Enumerator(RoundedEnumeratorWithWidth(lipgloss.Width(taskTag) - 2)).String(),
 	}
 
 	if v.result.ToolCallID == "" {
@@ -481,7 +461,6 @@ func (fr fetchRenderer) Render(v *toolCallCmp) string {
 	if v.result.ToolCallID == "" {
 		return header
 	}
-
 	body := renderMarkdownContent(v, v.result.Content)
 	return joinHeaderBody(header, body)
 }
@@ -505,39 +484,17 @@ type webFetchRenderer struct {
 
 // Render displays a compact view of web_fetch with just the URL in a link style
 func (wfr webFetchRenderer) Render(v *toolCallCmp) string {
-	t := styles.CurrentTheme()
-	var params tools.WebFetchParams
-	wfr.unmarshalParams(v.call.Input, &params)
-
-	width := v.textWidth()
-	if v.isNested {
-		width -= 4 // Adjust for nested tool call indentation
+	var params tools.FetchParams
+	var args []string
+	if err := wfr.unmarshalParams(v.call.Input, &params); err == nil {
+		args = newParamBuilder().
+			addMain(params.URL).
+			build()
 	}
 
-	header := wfr.makeHeader(v, "Fetch", width)
-	if res, done := earlyState(header, v); v.cancelled && done {
-		return res
-	}
-
-	// Display URL in a subtle, link-like style
-	urlStyle := t.S().Muted.Foreground(t.Blue).Underline(true)
-	urlText := urlStyle.Render(params.URL)
-
-	header = lipgloss.JoinHorizontal(lipgloss.Left, header, " ", urlText)
-
-	// If nested, return header only (no body content)
-	if v.isNested {
-		return v.style().Render(header)
-	}
-
-	if v.result.ToolCallID == "" {
-		v.spinning = true
-		return lipgloss.JoinHorizontal(lipgloss.Left, header, " ", v.anim.View())
-	}
-
-	v.spinning = false
-	body := renderMarkdownContent(v, v.result.Content)
-	return joinHeaderBody(header, body)
+	return wfr.renderWithParams(v, "Fetch", args, func() string {
+		return renderMarkdownContent(v, v.result.Content)
+	})
 }
 
 // -----------------------------------------------------------------------------
@@ -699,11 +656,17 @@ type agentRenderer struct {
 	baseRenderer
 }
 
-func RoundedEnumerator(children tree.Children, index int) string {
-	if children.Length()-1 == index {
-		return " ╰──"
+func RoundedEnumeratorWithWidth(width int) tree.Enumerator {
+	if width == 0 {
+		width = 2
 	}
-	return " ├──"
+	return func(children tree.Children, index int) string {
+		line := strings.Repeat("─", width)
+		if children.Length()-1 == index {
+			return " ╰" + line
+		}
+		return " ├" + line
+	}
 }
 
 // Render displays agent task parameters and result content
@@ -721,7 +684,7 @@ func (tr agentRenderer) Render(v *toolCallCmp) string {
 	}
 	taskTag := t.S().Base.Padding(0, 1).MarginLeft(1).Background(t.BlueLight).Foreground(t.White).Render("Task")
 	remainingWidth := v.textWidth() - lipgloss.Width(header) - lipgloss.Width(taskTag) - 2
-	remainingWidth = min(remainingWidth, 120-lipgloss.Width(header)-lipgloss.Width(taskTag)-2)
+	remainingWidth = min(remainingWidth, 120-lipgloss.Width(taskTag)-2)
 	prompt = t.S().Muted.Width(remainingWidth).Render(prompt)
 	header = lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -737,10 +700,11 @@ func (tr agentRenderer) Render(v *toolCallCmp) string {
 	childTools := tree.Root(header)
 
 	for _, call := range v.nestedToolCalls {
+		call.SetSize(remainingWidth, 1)
 		childTools.Child(call.View())
 	}
 	parts := []string{
-		childTools.Enumerator(RoundedEnumerator).String(),
+		childTools.Enumerator(RoundedEnumeratorWithWidth(lipgloss.Width(taskTag) - 2)).String(),
 	}
 
 	if v.result.ToolCallID == "" {
@@ -891,7 +855,7 @@ func renderMarkdownContent(v *toolCallCmp, content string) string {
 	width := v.textWidth() - 2
 	width = min(width, 120)
 
-	renderer := styles.GetPlainMarkdownRenderer(width - 2)
+	renderer := styles.GetPlainMarkdownRenderer(width)
 	rendered, err := renderer.Render(content)
 	if err != nil {
 		return renderPlainContent(v, content)
@@ -914,7 +878,7 @@ func renderMarkdownContent(v *toolCallCmp, content string) string {
 			Render(fmt.Sprintf("… (%d lines)", len(lines)-responseContextHeight)))
 	}
 
-	return style.PaddingLeft(1).PaddingRight(1).Render(strings.Join(out, "\n"))
+	return style.Render(strings.Join(out, "\n"))
 }
 
 func getDigits(n int) int {
