@@ -13,15 +13,14 @@ import (
 
 // BackgroundShell represents a shell running in the background.
 type BackgroundShell struct {
-	ID         string
-	Shell      *Shell
-	ctx        context.Context
-	cancel     context.CancelFunc
-	stdout     *bytes.Buffer
-	stderr     *bytes.Buffer
-	done       chan struct{}
-	exitErr    error
-	workingDir string
+	ID      string
+	Shell   *Shell
+	ctx     context.Context
+	cancel  context.CancelFunc
+	stdout  *bytes.Buffer
+	stderr  *bytes.Buffer
+	done    chan struct{}
+	exitErr error
 }
 
 // BackgroundShellManager manages background shell instances.
@@ -56,14 +55,13 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 	shellCtx, cancel := context.WithCancel(ctx)
 
 	bgShell := &BackgroundShell{
-		ID:         id,
-		Shell:      shell,
-		ctx:        shellCtx,
-		cancel:     cancel,
-		stdout:     &bytes.Buffer{},
-		stderr:     &bytes.Buffer{},
-		done:       make(chan struct{}),
-		workingDir: workingDir,
+		ID:     id,
+		Shell:  shell,
+		ctx:    shellCtx,
+		cancel: cancel,
+		stdout: &bytes.Buffer{},
+		stderr: &bytes.Buffer{},
+		done:   make(chan struct{}),
 	}
 
 	m.shells.Set(id, bgShell)
@@ -84,6 +82,16 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 // Get retrieves a background shell by ID.
 func (m *BackgroundShellManager) Get(id string) (*BackgroundShell, bool) {
 	return m.shells.Get(id)
+}
+
+// Remove removes a background shell from the manager without terminating it.
+// This is useful when a shell has already completed and you just want to clean up tracking.
+func (m *BackgroundShellManager) Remove(id string) error {
+	_, ok := m.shells.Take(id)
+	if !ok {
+		return fmt.Errorf("background shell not found: %s", id)
+	}
+	return nil
 }
 
 // Kill terminates a background shell by ID.
@@ -148,5 +156,5 @@ func (bs *BackgroundShell) Wait() {
 
 // GetWorkingDir returns the current working directory of the background shell.
 func (bs *BackgroundShell) GetWorkingDir() string {
-	return bs.workingDir
+	return bs.Shell.GetWorkingDir()
 }

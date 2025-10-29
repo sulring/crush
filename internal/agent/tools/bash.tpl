@@ -1,4 +1,4 @@
-Executes bash commands in persistent shell session with timeout and security measures.
+Executes bash commands with automatic background conversion for long-running tasks.
 
 <cross_platform>
 Uses mvdan/sh interpreter (Bash-compatible on all platforms including Windows).
@@ -10,21 +10,22 @@ Common shell builtins and core utils available on Windows.
 1. Directory Verification: If creating directories/files, use LS tool to verify parent exists
 2. Security Check: Banned commands ({{ .BannedCommands }}) return error - explain to user. Safe read-only commands execute without prompts
 3. Command Execution: Execute with proper quoting, capture output
-4. Output Processing: Truncate if exceeds {{ .MaxOutputLength }} characters
-5. Return Result: Include errors, metadata with <cwd></cwd> tags
+4. Auto-Background: Commands exceeding 1 minute automatically move to background and return shell ID
+5. Output Processing: Truncate if exceeds {{ .MaxOutputLength }} characters
+6. Return Result: Include errors, metadata with <cwd></cwd> tags
 </execution_steps>
 
 <usage_notes>
-- Command required, timeout optional (max 600000ms/10min, default 30min if unspecified)
+- Command required, working_dir optional (defaults to current directory)
 - IMPORTANT: Use Grep/Glob/Agent tools instead of 'find'/'grep'. Use View/LS tools instead of 'cat'/'head'/'tail'/'ls'
 - Chain with ';' or '&&', avoid newlines except in quoted strings
-- Shell state persists (env vars, virtual envs, cwd, etc.) unless running in background
+- Each command runs in independent shell (no state persistence between calls)
 - Prefer absolute paths over 'cd' (use 'cd' only if user explicitly requests)
 </usage_notes>
 
 <background_execution>
 - Set background=true to run commands in a separate background shell
-- Background shells don't share state with the persistent shell
+- Commands taking longer than 1 minute automatically convert to background
 - Returns a shell ID for managing the background process
 - Use bash_output tool to view current output from background shell
 - Use bash_kill tool to terminate a background shell

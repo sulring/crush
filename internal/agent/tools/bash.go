@@ -21,14 +21,14 @@ import (
 type BashParams struct {
 	Command     string `json:"command" description:"The command to execute"`
 	Description string `json:"description,omitempty" description:"A brief description of what the command does"`
-	Timeout     int    `json:"timeout,omitempty" description:"Optional timeout in milliseconds (max 600000)"`
+	WorkingDir  string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
 	Background  bool   `json:"background,omitempty" description:"Run the command in a background shell. Returns a shell ID for managing the process."`
 }
 
 type BashPermissionsParams struct {
 	Command     string `json:"command"`
 	Description string `json:"description"`
-	Timeout     int    `json:"timeout"`
+	WorkingDir  string `json:"working_dir"`
 	Background  bool   `json:"background"`
 }
 
@@ -45,10 +45,9 @@ type BashResponseMetadata struct {
 const (
 	BashToolName = "bash"
 
-	DefaultTimeout  = 1 * 60 * 1000  // 1 minutes in milliseconds
-	MaxTimeout      = 10 * 60 * 1000 // 10 minutes in milliseconds
-	MaxOutputLength = 30000
-	BashNoOutput    = "no output"
+	AutoBackgroundThreshold = 1 * time.Minute // Commands taking longer automatically become background jobs
+	MaxOutputLength         = 30000
+	BashNoOutput            = "no output"
 )
 
 //go:embed bash.tpl
@@ -185,21 +184,18 @@ func blockFuncs() []shell.BlockFunc {
 }
 
 func NewBashTool(permissions permission.Service, workingDir string, attribution *config.Attribution) fantasy.AgentTool {
-	// Set up command blocking on the persistent shell
-	persistentShell := shell.GetPersistentShell(workingDir)
-	persistentShell.SetBlockFuncs(blockFuncs())
 	return fantasy.NewAgentTool(
 		BashToolName,
 		string(bashDescription(attribution)),
 		func(ctx context.Context, params BashParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			if params.Timeout > MaxTimeout {
-				params.Timeout = MaxTimeout
-			} else if params.Timeout <= 0 {
-				params.Timeout = DefaultTimeout
-			}
-
 			if params.Command == "" {
 				return fantasy.NewTextErrorResponse("missing command"), nil
+			}
+
+			// Determine working directory
+			execWorkingDir := workingDir
+			if params.WorkingDir != "" {
+				execWorkingDir = params.WorkingDir
 			}
 
 			isSafeReadOnly := false
@@ -219,25 +215,15 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for executing shell command")
 			}
 			if !isSafeReadOnly {
-				var shellDir string
-				if params.Background {
-					shellDir = workingDir
-				} else {
-					shellDir = shell.GetPersistentShell(workingDir).GetWorkingDir()
-				}
 				p := permissions.Request(
 					permission.CreatePermissionRequest{
 						SessionID:   sessionID,
-						Path:        shellDir,
+						Path:        execWorkingDir,
 						ToolCallID:  call.ID,
 						ToolName:    BashToolName,
 						Action:      "execute",
 						Description: fmt.Sprintf("Execute command: %s", params.Command),
-						Params: BashPermissionsParams{
-							Command:     params.Command,
-							Description: params.Description,
-							Background:  params.Background,
-						},
+						Params:      BashPermissionsParams(params),
 					},
 				)
 				if !p {
@@ -245,10 +231,11 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				}
 			}
 
+			// If explicitly requested as background, start immediately
 			if params.Background {
 				startTime := time.Now()
 				bgManager := shell.GetBackgroundShellManager()
-				bgShell, err := bgManager.Start(ctx, workingDir, blockFuncs(), params.Command)
+				bgShell, err := bgManager.Start(ctx, execWorkingDir, blockFuncs(), params.Command)
 				if err != nil {
 					return fantasy.ToolResponse{}, fmt.Errorf("error starting background shell: %w", err)
 				}
@@ -265,65 +252,110 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
 			}
 
+			// Start synchronous execution with auto-background support
 			startTime := time.Now()
-			if params.Timeout > 0 {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, time.Duration(params.Timeout)*time.Millisecond)
-				defer cancel()
+
+			// Start background shell immediately but wait for threshold before deciding
+			bgManager := shell.GetBackgroundShellManager()
+			bgShell, err := bgManager.Start(ctx, execWorkingDir, blockFuncs(), params.Command)
+			if err != nil {
+				return fantasy.ToolResponse{}, fmt.Errorf("error starting shell: %w", err)
 			}
 
-			persistentShell := shell.GetPersistentShell(workingDir)
-			stdout, stderr, err := persistentShell.Exec(ctx, params.Command)
+			// Wait for either completion, auto-background threshold, or context cancellation
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			timeout := time.After(AutoBackgroundThreshold)
 
-			currentWorkingDir := persistentShell.GetWorkingDir()
-			interrupted := shell.IsInterrupt(err)
-			exitCode := shell.ExitCode(err)
-			if exitCode == 0 && !interrupted && err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error executing command: %w", err)
-			}
+			var stdout, stderr string
+			var done bool
+			var execErr error
 
-			stdout = truncateOutput(stdout)
-			stderr = truncateOutput(stderr)
-
-			errorMessage := stderr
-			if errorMessage == "" && err != nil {
-				errorMessage = err.Error()
-			}
-
-			if interrupted {
-				if errorMessage != "" {
-					errorMessage += "\n"
+		waitLoop:
+			for {
+				select {
+				case <-ticker.C:
+					stdout, stderr, done, execErr = bgShell.GetOutput()
+					if done {
+						break waitLoop
+					}
+				case <-timeout:
+					stdout, stderr, done, execErr = bgShell.GetOutput()
+					break waitLoop
+				case <-ctx.Done():
+					// Context was cancelled, kill the shell and return error
+					bgManager.Kill(bgShell.ID)
+					return fantasy.ToolResponse{}, ctx.Err()
 				}
-				errorMessage += "Command was aborted before completion"
-			} else if exitCode != 0 {
-				if errorMessage != "" {
-					errorMessage += "\n"
+			}
+
+			if done {
+				// Command completed within threshold - return synchronously
+				// Remove from background manager since we're returning directly
+				// Don't call Kill() as it cancels the context and corrupts the exit code
+				bgManager.Remove(bgShell.ID)
+
+				interrupted := shell.IsInterrupt(execErr)
+				exitCode := shell.ExitCode(execErr)
+				if exitCode == 0 && !interrupted && execErr != nil {
+					return fantasy.ToolResponse{}, fmt.Errorf("error executing command: %w", execErr)
 				}
-				errorMessage += fmt.Sprintf("Exit code %d", exitCode)
+
+				stdout = truncateOutput(stdout)
+				stderr = truncateOutput(stderr)
+
+				errorMessage := stderr
+				if errorMessage == "" && execErr != nil {
+					errorMessage = execErr.Error()
+				}
+
+				if interrupted {
+					if errorMessage != "" {
+						errorMessage += "\n"
+					}
+					errorMessage += "Command was aborted before completion"
+				} else if exitCode != 0 {
+					if errorMessage != "" {
+						errorMessage += "\n"
+					}
+					errorMessage += fmt.Sprintf("Exit code %d", exitCode)
+				}
+
+				hasBothOutputs := stdout != "" && stderr != ""
+
+				if hasBothOutputs {
+					stdout += "\n"
+				}
+
+				if errorMessage != "" {
+					stdout += "\n" + errorMessage
+				}
+
+				metadata := BashResponseMetadata{
+					StartTime:        startTime.UnixMilli(),
+					EndTime:          time.Now().UnixMilli(),
+					Output:           stdout,
+					Description:      params.Description,
+					WorkingDirectory: bgShell.GetWorkingDir(),
+				}
+				if stdout == "" {
+					return fantasy.WithResponseMetadata(fantasy.NewTextResponse(BashNoOutput), metadata), nil
+				}
+				stdout += fmt.Sprintf("\n\n<cwd>%s</cwd>", normalizeWorkingDir(bgShell.GetWorkingDir()))
+				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(stdout), metadata), nil
 			}
 
-			hasBothOutputs := stdout != "" && stderr != ""
-
-			if hasBothOutputs {
-				stdout += "\n"
-			}
-
-			if errorMessage != "" {
-				stdout += "\n" + errorMessage
-			}
-
+			// Still running - keep as background job
 			metadata := BashResponseMetadata{
 				StartTime:        startTime.UnixMilli(),
 				EndTime:          time.Now().UnixMilli(),
-				Output:           stdout,
 				Description:      params.Description,
-				WorkingDirectory: currentWorkingDir,
+				WorkingDirectory: bgShell.GetWorkingDir(),
+				Background:       true,
+				ShellID:          bgShell.ID,
 			}
-			if stdout == "" {
-				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(BashNoOutput), metadata), nil
-			}
-			stdout += fmt.Sprintf("\n\n<cwd>%s</cwd>", normalizeWorkingDir(currentWorkingDir))
-			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(stdout), metadata), nil
+			response := fmt.Sprintf("Command is taking longer than expected and has been moved to background.\n\nBackground shell ID: %s\n\nUse bash_output tool to view output or bash_kill to terminate.", bgShell.ID)
+			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
 		})
 }
 

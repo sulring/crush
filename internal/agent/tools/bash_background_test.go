@@ -355,3 +355,78 @@ func TestBackgroundShell_IDFormat(t *testing.T) {
 	require.Greater(t, len(bgShell.ID), 5, "ID should be long enough")
 	require.Less(t, len(bgShell.ID), 100, "ID should not be too long")
 }
+
+func TestBackgroundShell_AutoBackground(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	ctx := context.Background()
+
+	// Test that a quick command completes synchronously
+	t.Run("quick command completes synchronously", func(t *testing.T) {
+		t.Parallel()
+		bgManager := shell.GetBackgroundShellManager()
+		bgShell, err := bgManager.Start(ctx, workingDir, nil, "echo 'quick'")
+		require.NoError(t, err)
+
+		// Wait threshold time
+		time.Sleep(5 * time.Second)
+
+		// Should be done by now
+		stdout, stderr, done, err := bgShell.GetOutput()
+		require.NoError(t, err)
+		require.True(t, done, "Quick command should be done")
+		require.Contains(t, stdout, "quick")
+		require.Empty(t, stderr)
+
+		// Clean up
+		bgManager.Kill(bgShell.ID)
+	})
+
+	// Test that a long command stays in background
+	t.Run("long command stays in background", func(t *testing.T) {
+		t.Parallel()
+		bgManager := shell.GetBackgroundShellManager()
+		bgShell, err := bgManager.Start(ctx, workingDir, nil, "sleep 20 && echo '20 seconds completed'")
+		require.NoError(t, err)
+		defer bgManager.Kill(bgShell.ID)
+
+		// Wait threshold time
+		time.Sleep(5 * time.Second)
+
+		// Should still be running
+		stdout, stderr, done, err := bgShell.GetOutput()
+		require.NoError(t, err)
+		require.False(t, done, "Long command should still be running")
+		require.Empty(t, stdout, "No output yet from sleep command")
+		require.Empty(t, stderr)
+
+		// Verify we can get the shell from manager
+		retrieved, ok := bgManager.Get(bgShell.ID)
+		require.True(t, ok, "Should be able to retrieve background shell")
+		require.Equal(t, bgShell.ID, retrieved.ID)
+	})
+
+	// Test that we can check output of long-running command later
+	t.Run("can check output after completion", func(t *testing.T) {
+		t.Parallel()
+		bgManager := shell.GetBackgroundShellManager()
+		bgShell, err := bgManager.Start(ctx, workingDir, nil, "sleep 3 && echo 'completed'")
+		require.NoError(t, err)
+		defer bgManager.Kill(bgShell.ID)
+
+		// Initially should be running
+		_, _, done, _ := bgShell.GetOutput()
+		require.False(t, done, "Should be running initially")
+
+		// Wait for completion
+		time.Sleep(4 * time.Second)
+
+		// Now should be done
+		stdout, stderr, done, err := bgShell.GetOutput()
+		require.NoError(t, err)
+		require.True(t, done, "Should be done after waiting")
+		require.Contains(t, stdout, "completed")
+		require.Empty(t, stderr)
+	})
+}
