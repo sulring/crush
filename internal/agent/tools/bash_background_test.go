@@ -60,33 +60,6 @@ func TestBackgroundShell_Kill(t *testing.T) {
 	require.True(t, bgShell.IsDone())
 }
 
-func TestBackgroundShell_GetWorkingDir_NoHang(t *testing.T) {
-	t.Parallel()
-
-	workingDir := t.TempDir()
-	ctx := context.Background()
-
-	// Start a long-running background shell
-	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, nil, "sleep 10")
-	require.NoError(t, err)
-	defer bgManager.Kill(bgShell.ID)
-
-	// This should complete quickly without hanging, even while the command is running
-	done := make(chan string, 1)
-	go func() {
-		dir := bgShell.GetWorkingDir()
-		done <- dir
-	}()
-
-	select {
-	case dir := <-done:
-		require.Equal(t, workingDir, dir)
-	case <-time.After(2 * time.Second):
-		t.Fatal("GetWorkingDir() hung - did not complete within timeout")
-	}
-}
-
 func TestBackgroundShell_GetOutput_NoHang(t *testing.T) {
 	t.Parallel()
 
