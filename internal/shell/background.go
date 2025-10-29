@@ -19,7 +19,6 @@ type BackgroundShell struct {
 	cancel     context.CancelFunc
 	stdout     *bytes.Buffer
 	stderr     *bytes.Buffer
-	mu         sync.RWMutex
 	done       chan struct{}
 	exitErr    error
 	workingDir string
@@ -74,11 +73,9 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 
 		stdout, stderr, err := shell.Exec(shellCtx, command)
 
-		bgShell.mu.Lock()
 		bgShell.stdout.WriteString(stdout)
 		bgShell.stderr.WriteString(stderr)
 		bgShell.exitErr = err
-		bgShell.mu.Unlock()
 	}()
 
 	return bgShell, nil
@@ -126,9 +123,6 @@ func (m *BackgroundShellManager) KillAll() {
 
 // GetOutput returns the current output of a background shell.
 func (bs *BackgroundShell) GetOutput() (stdout string, stderr string, done bool, err error) {
-	bs.mu.RLock()
-	defer bs.mu.RUnlock()
-
 	select {
 	case <-bs.done:
 		return bs.stdout.String(), bs.stderr.String(), true, bs.exitErr
@@ -154,7 +148,5 @@ func (bs *BackgroundShell) Wait() {
 
 // GetWorkingDir returns the current working directory of the background shell.
 func (bs *BackgroundShell) GetWorkingDir() string {
-	bs.mu.RLock()
-	defer bs.mu.RUnlock()
 	return bs.workingDir
 }
