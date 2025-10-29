@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
 	"charm.land/fantasy"
@@ -12,6 +13,9 @@ const (
 	BashKillToolName = "bash_kill"
 )
 
+//go:embed bash_kill.md
+var bashKillDescription []byte
+
 type BashKillParams struct {
 	ShellID string `json:"shell_id" description:"The ID of the background shell to terminate"`
 }
@@ -20,30 +24,10 @@ type BashKillResponseMetadata struct {
 	ShellID string `json:"shell_id"`
 }
 
-const bashKillDescription = `Terminates a background shell process.
-
-<usage>
-- Provide the shell ID returned from a background bash execution
-- Cancels the running process and cleans up resources
-</usage>
-
-<features>
-- Stop long-running background processes
-- Clean up completed background shells
-- Immediately terminates the process
-</features>
-
-<tips>
-- Use this when you need to stop a background process
-- The process is terminated immediately (similar to SIGTERM)
-- After killing, the shell ID becomes invalid
-</tips>
-`
-
 func NewBashKillTool() fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		BashKillToolName,
-		bashKillDescription,
+		string(bashKillDescription),
 		func(ctx context.Context, params BashKillParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.ShellID == "" {
 				return fantasy.NewTextErrorResponse("missing shell_id"), nil

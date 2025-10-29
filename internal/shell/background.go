@@ -121,6 +121,22 @@ func (m *BackgroundShellManager) List() []string {
 	return ids
 }
 
+// KillAll terminates all background shells.
+func (m *BackgroundShellManager) KillAll() {
+	m.mu.Lock()
+	shells := make([]*BackgroundShell, 0, len(m.shells))
+	for _, shell := range m.shells {
+		shells = append(shells, shell)
+	}
+	m.shells = make(map[string]*BackgroundShell)
+	m.mu.Unlock()
+
+	for _, shell := range shells {
+		shell.cancel()
+		<-shell.done
+	}
+}
+
 // GetOutput returns the current output of a background shell.
 func (bs *BackgroundShell) GetOutput() (stdout string, stderr string, done bool, err error) {
 	bs.mu.RLock()

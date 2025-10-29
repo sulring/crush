@@ -212,3 +212,65 @@ func TestBackgroundShellManager_List(t *testing.T) {
 	manager.Kill(bgShell1.ID)
 	manager.Kill(bgShell2.ID)
 }
+
+func TestBackgroundShellManager_KillAll(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	workingDir := t.TempDir()
+	manager := GetBackgroundShellManager()
+
+	// Start multiple long-running shells
+	shell1, err := manager.Start(ctx, workingDir, nil, "sleep 10")
+	if err != nil {
+		t.Fatalf("failed to start shell 1: %v", err)
+	}
+
+	shell2, err := manager.Start(ctx, workingDir, nil, "sleep 10")
+	if err != nil {
+		t.Fatalf("failed to start shell 2: %v", err)
+	}
+
+	shell3, err := manager.Start(ctx, workingDir, nil, "sleep 10")
+	if err != nil {
+		t.Fatalf("failed to start shell 3: %v", err)
+	}
+
+	// Verify shells are running
+	if shell1.IsDone() || shell2.IsDone() || shell3.IsDone() {
+		t.Error("shells should not be done yet")
+	}
+
+	// Kill all shells
+	manager.KillAll()
+
+	// Verify all shells are done
+	if !shell1.IsDone() {
+		t.Error("shell1 should be done after KillAll")
+	}
+	if !shell2.IsDone() {
+		t.Error("shell2 should be done after KillAll")
+	}
+	if !shell3.IsDone() {
+		t.Error("shell3 should be done after KillAll")
+	}
+
+	// Verify they're removed from the manager
+	if _, ok := manager.Get(shell1.ID); ok {
+		t.Error("shell1 should be removed from manager")
+	}
+	if _, ok := manager.Get(shell2.ID); ok {
+		t.Error("shell2 should be removed from manager")
+	}
+	if _, ok := manager.Get(shell3.ID); ok {
+		t.Error("shell3 should be removed from manager")
+	}
+
+	// Verify list is empty (or doesn't contain our shells)
+	ids := manager.List()
+	for _, id := range ids {
+		if id == shell1.ID || id == shell2.ID || id == shell3.ID {
+			t.Errorf("shell %s should not be in list after KillAll", id)
+		}
+	}
+}

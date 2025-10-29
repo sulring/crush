@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,9 @@ const (
 	BashOutputToolName = "bash_output"
 )
 
+//go:embed bash_output.md
+var bashOutputDescription []byte
+
 type BashOutputParams struct {
 	ShellID string `json:"shell_id" description:"The ID of the background shell to retrieve output from"`
 }
@@ -23,31 +27,10 @@ type BashOutputResponseMetadata struct {
 	WorkingDirectory string `json:"working_directory"`
 }
 
-const bashOutputDescription = `Retrieves the current output from a background shell.
-
-<usage>
-- Provide the shell ID returned from a background bash execution
-- Returns the current stdout and stderr output
-- Indicates whether the shell has completed execution
-</usage>
-
-<features>
-- View output from running background processes
-- Check if background process has completed
-- Get cumulative output from process start
-</features>
-
-<tips>
-- Use this to monitor long-running processes
-- Check the 'done' status to see if process completed
-- Can be called multiple times to view incremental output
-</tips>
-`
-
 func NewBashOutputTool() fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		BashOutputToolName,
-		bashOutputDescription,
+		string(bashOutputDescription),
 		func(ctx context.Context, params BashOutputParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.ShellID == "" {
 				return fantasy.NewTextErrorResponse("missing shell_id"), nil
