@@ -18,9 +18,18 @@ Common shell builtins and core utils available on Windows.
 - Command required, timeout optional (max 600000ms/10min, default 30min if unspecified)
 - IMPORTANT: Use Grep/Glob/Agent tools instead of 'find'/'grep'. Use View/LS tools instead of 'cat'/'head'/'tail'/'ls'
 - Chain with ';' or '&&', avoid newlines except in quoted strings
-- Shell state persists (env vars, virtual envs, cwd, etc.)
+- Shell state persists (env vars, virtual envs, cwd, etc.) unless running in background
 - Prefer absolute paths over 'cd' (use 'cd' only if user explicitly requests)
 </usage_notes>
+
+<background_execution>
+- Set background=true to run commands in a separate background shell
+- Background shells don't share state with the persistent shell
+- Returns a shell ID for managing the background process
+- Use bash_output tool to view current output from background shell
+- Use bash_kill tool to terminate a background shell
+- Useful for long-running processes, servers, or monitoring tasks
+</background_execution>
 
 <git_commits>
 When user asks to create git commit:

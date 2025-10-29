@@ -22,12 +22,14 @@ type BashParams struct {
 	Command     string `json:"command" description:"The command to execute"`
 	Description string `json:"description,omitempty" description:"A brief description of what the command does"`
 	Timeout     int    `json:"timeout,omitempty" description:"Optional timeout in milliseconds (max 600000)"`
+	Background  bool   `json:"background,omitempty" description:"Run the command in a background shell. Returns a shell ID for managing the process."`
 }
 
 type BashPermissionsParams struct {
 	Command     string `json:"command"`
 	Description string `json:"description"`
 	Timeout     int    `json:"timeout"`
+	Background  bool   `json:"background"`
 }
 
 type BashResponseMetadata struct {
@@ -36,6 +38,8 @@ type BashResponseMetadata struct {
 	Output           string `json:"output"`
 	Description      string `json:"description"`
 	WorkingDirectory string `json:"working_directory"`
+	Background       bool   `json:"background,omitempty"`
+	ShellID          string `json:"shell_id,omitempty"`
 }
 
 const (
@@ -215,11 +219,16 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for executing shell command")
 			}
 			if !isSafeReadOnly {
-				shell := shell.GetPersistentShell(workingDir)
+				var shellDir string
+				if params.Background {
+					shellDir = workingDir
+				} else {
+					shellDir = shell.GetPersistentShell(workingDir).GetWorkingDir()
+				}
 				p := permissions.Request(
 					permission.CreatePermissionRequest{
 						SessionID:   sessionID,
-						Path:        shell.GetWorkingDir(),
+						Path:        shellDir,
 						ToolCallID:  call.ID,
 						ToolName:    BashToolName,
 						Action:      "execute",
@@ -227,6 +236,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 						Params: BashPermissionsParams{
 							Command:     params.Command,
 							Description: params.Description,
+							Background:  params.Background,
 						},
 					},
 				)
@@ -234,6 +244,27 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 					return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
 				}
 			}
+
+			if params.Background {
+				startTime := time.Now()
+				bgManager := shell.GetBackgroundShellManager()
+				bgShell, err := bgManager.Start(ctx, workingDir, blockFuncs(), params.Command)
+				if err != nil {
+					return fantasy.ToolResponse{}, fmt.Errorf("error starting background shell: %w", err)
+				}
+
+				metadata := BashResponseMetadata{
+					StartTime:        startTime.UnixMilli(),
+					EndTime:          time.Now().UnixMilli(),
+					Description:      params.Description,
+					WorkingDirectory: bgShell.GetWorkingDir(),
+					Background:       true,
+					ShellID:          bgShell.ID,
+				}
+				response := fmt.Sprintf("Background shell started with ID: %s\n\nUse bash_output tool to view output or bash_kill to terminate.", bgShell.ID)
+				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
+			}
+
 			startTime := time.Now()
 			if params.Timeout > 0 {
 				var cancel context.CancelFunc
@@ -244,7 +275,6 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			persistentShell := shell.GetPersistentShell(workingDir)
 			stdout, stderr, err := persistentShell.Exec(ctx, params.Command)
 
-			// Get the current working directory after command execution
 			currentWorkingDir := persistentShell.GetWorkingDir()
 			interrupted := shell.IsInterrupt(err)
 			exitCode := shell.ExitCode(err)
