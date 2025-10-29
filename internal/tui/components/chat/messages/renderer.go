@@ -421,7 +421,7 @@ func (fr fetchRenderer) Render(v *toolCallCmp) string {
 		return res
 	}
 
-	taskTag := t.S().Base.Padding(0, 1).MarginLeft(2).Background(t.GreenLight).Foreground(t.White).Render("Prompt")
+	taskTag := t.S().Base.Bold(true).Padding(0, 1).MarginLeft(2).Background(t.GreenLight).Foreground(t.Border).Render("Prompt")
 	remainingWidth := v.textWidth() - (lipgloss.Width(taskTag) + 1)
 	remainingWidth = min(remainingWidth, 120-(lipgloss.Width(taskTag)+1))
 	prompt = t.S().Muted.Width(remainingWidth).Render(prompt)
@@ -443,7 +443,7 @@ func (fr fetchRenderer) Render(v *toolCallCmp) string {
 		childTools.Child(call.View())
 	}
 	parts := []string{
-		childTools.Enumerator(RoundedEnumeratorWithWidth(lipgloss.Width(taskTag) - 2)).String(),
+		childTools.Enumerator(RoundedEnumeratorWithWidth(2, lipgloss.Width(taskTag)-3)).String(),
 	}
 
 	if v.result.ToolCallID == "" {
@@ -656,16 +656,20 @@ type agentRenderer struct {
 	baseRenderer
 }
 
-func RoundedEnumeratorWithWidth(width int) tree.Enumerator {
+func RoundedEnumeratorWithWidth(lPadding, width int) tree.Enumerator {
 	if width == 0 {
 		width = 2
 	}
+	if lPadding == 0 {
+		lPadding = 1
+	}
 	return func(children tree.Children, index int) string {
 		line := strings.Repeat("─", width)
+		padding := strings.Repeat(" ", lPadding)
 		if children.Length()-1 == index {
-			return " ╰" + line
+			return padding + "╰" + line
 		}
-		return " ├" + line
+		return padding + "├" + line
 	}
 }
 
@@ -682,7 +686,7 @@ func (tr agentRenderer) Render(v *toolCallCmp) string {
 	if res, done := earlyState(header, v); v.cancelled && done {
 		return res
 	}
-	taskTag := t.S().Base.Padding(0, 1).MarginLeft(1).Background(t.BlueLight).Foreground(t.White).Render("Task")
+	taskTag := t.S().Base.Bold(true).Padding(0, 1).MarginLeft(2).Background(t.BlueLight).Foreground(t.White).Render("Task")
 	remainingWidth := v.textWidth() - lipgloss.Width(header) - lipgloss.Width(taskTag) - 2
 	remainingWidth = min(remainingWidth, 120-lipgloss.Width(taskTag)-2)
 	prompt = t.S().Muted.Width(remainingWidth).Render(prompt)
@@ -704,7 +708,7 @@ func (tr agentRenderer) Render(v *toolCallCmp) string {
 		childTools.Child(call.View())
 	}
 	parts := []string{
-		childTools.Enumerator(RoundedEnumeratorWithWidth(lipgloss.Width(taskTag) - 2)).String(),
+		childTools.Enumerator(RoundedEnumeratorWithWidth(2, lipgloss.Width(taskTag)-3)).String(),
 	}
 
 	if v.result.ToolCallID == "" {
