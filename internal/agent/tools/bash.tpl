@@ -24,12 +24,22 @@ Common shell builtins and core utils available on Windows.
 </usage_notes>
 
 <background_execution>
-- Set background=true to run commands in a separate background shell
-- Commands taking longer than 1 minute automatically convert to background
+- Set run_in_background=true to run commands in a separate background shell
 - Returns a shell ID for managing the background process
 - Use bash_output tool to view current output from background shell
 - Use bash_kill tool to terminate a background shell
-- Useful for long-running processes, servers, or monitoring tasks
+- IMPORTANT: NEVER use '&' at the end of commands to run in background - use run_in_background parameter instead
+- Commands that should run in background:
+  * Long-running servers (e.g., 'npm start', 'python -m http.server', 'node server.js')
+  * Watch/monitoring tasks (e.g., 'npm run watch', 'tail -f logfile')
+  * Continuous processes that don't exit on their own
+  * Any command expected to run indefinitely
+- Commands that should NOT run in background:
+  * Build commands (e.g., 'npm run build', 'go build')
+  * Test suites (e.g., 'npm test', 'pytest')
+  * Git operations
+  * File operations
+  * Short-lived scripts
 </background_execution>
 
 <git_commits>

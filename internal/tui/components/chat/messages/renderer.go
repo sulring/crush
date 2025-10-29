@@ -217,7 +217,7 @@ func (br bashRenderer) Render(v *toolCallCmp) string {
 	cmd = strings.ReplaceAll(cmd, "\t", "    ")
 	args := newParamBuilder().
 		addMain(cmd).
-		addFlag("background", params.Background).
+		addFlag("background", params.RunInBackground).
 		build()
 
 	return br.renderWithParams(v, "Bash", args, func() string {

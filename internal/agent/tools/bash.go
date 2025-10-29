@@ -19,17 +19,17 @@ import (
 )
 
 type BashParams struct {
-	Command     string `json:"command" description:"The command to execute"`
-	Description string `json:"description,omitempty" description:"A brief description of what the command does"`
-	WorkingDir  string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
-	Background  bool   `json:"background,omitempty" description:"Run the command in a background shell. Returns a shell ID for managing the process."`
+	Command         string `json:"command" description:"The command to execute"`
+	Description     string `json:"description,omitempty" description:"A brief description of what the command does"`
+	WorkingDir      string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
+	RunInBackground bool   `json:"run_in_background,omitempty" description:"Set to true (boolean) to run this command in the background. Use bash_output to read the output later."`
 }
 
 type BashPermissionsParams struct {
-	Command     string `json:"command"`
-	Description string `json:"description"`
-	WorkingDir  string `json:"working_dir"`
-	Background  bool   `json:"background"`
+	Command         string `json:"command"`
+	Description     string `json:"description"`
+	WorkingDir      string `json:"working_dir"`
+	RunInBackground bool   `json:"run_in_background"`
 }
 
 type BashResponseMetadata struct {
@@ -231,11 +231,12 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				}
 			}
 
-			// If explicitly requested as background, start immediately
-			if params.Background {
+			// If explicitly requested as background, start immediately with detached context
+			if params.RunInBackground {
 				startTime := time.Now()
 				bgManager := shell.GetBackgroundShellManager()
-				bgShell, err := bgManager.Start(ctx, execWorkingDir, blockFuncs(), params.Command)
+				// Use background context so it continues after tool returns
+				bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command)
 				if err != nil {
 					return fantasy.ToolResponse{}, fmt.Errorf("error starting background shell: %w", err)
 				}
@@ -255,9 +256,9 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			// Start synchronous execution with auto-background support
 			startTime := time.Now()
 
-			// Start background shell immediately but wait for threshold before deciding
+			// Start with detached context so it can survive if moved to background
 			bgManager := shell.GetBackgroundShellManager()
-			bgShell, err := bgManager.Start(ctx, execWorkingDir, blockFuncs(), params.Command)
+			bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command)
 			if err != nil {
 				return fantasy.ToolResponse{}, fmt.Errorf("error starting shell: %w", err)
 			}
@@ -283,7 +284,8 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 					stdout, stderr, done, execErr = bgShell.GetOutput()
 					break waitLoop
 				case <-ctx.Done():
-					// Context was cancelled, kill the shell and return error
+					// Incoming context was cancelled before we moved to background
+					// Kill the shell and return error
 					bgManager.Kill(bgShell.ID)
 					return fantasy.ToolResponse{}, ctx.Err()
 				}
