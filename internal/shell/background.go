@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/hotdiva2000"
+
+	"github.com/charmbracelet/crush/internal/csync"
 )
 
 // BackgroundShell represents a shell running in the background.
@@ -25,8 +27,7 @@ type BackgroundShell struct {
 
 // BackgroundShellManager manages background shell instances.
 type BackgroundShellManager struct {
-	shells map[string]*BackgroundShell
-	mu     sync.RWMutex
+	shells *csync.Map[string, *BackgroundShell]
 }
 
 var (
@@ -38,7 +39,7 @@ var (
 func GetBackgroundShellManager() *BackgroundShellManager {
 	backgroundManagerOnce.Do(func() {
 		backgroundManager = &BackgroundShellManager{
-			shells: make(map[string]*BackgroundShell),
+			shells: csync.NewMap[string, *BackgroundShell](),
 		}
 	})
 	return backgroundManager
@@ -66,9 +67,7 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 		workingDir: workingDir,
 	}
 
-	m.mu.Lock()
-	m.shells[id] = bgShell
-	m.mu.Unlock()
+	m.shells.Set(id, bgShell)
 
 	go func() {
 		defer close(bgShell.done)
@@ -87,22 +86,15 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 
 // Get retrieves a background shell by ID.
 func (m *BackgroundShellManager) Get(id string) (*BackgroundShell, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	shell, ok := m.shells[id]
-	return shell, ok
+	return m.shells.Get(id)
 }
 
 // Kill terminates a background shell by ID.
 func (m *BackgroundShellManager) Kill(id string) error {
-	m.mu.Lock()
-	shell, ok := m.shells[id]
+	shell, ok := m.shells.Take(id)
 	if !ok {
-		m.mu.Unlock()
 		return fmt.Errorf("background shell not found: %s", id)
 	}
-	delete(m.shells, id)
-	m.mu.Unlock()
 
 	shell.cancel()
 	<-shell.done
@@ -111,11 +103,8 @@ func (m *BackgroundShellManager) Kill(id string) error {
 
 // List returns all background shell IDs.
 func (m *BackgroundShellManager) List() []string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	ids := make([]string, 0, len(m.shells))
-	for id := range m.shells {
+	ids := make([]string, 0, m.shells.Len())
+	for id := range m.shells.Seq2() {
 		ids = append(ids, id)
 	}
 	return ids
@@ -123,13 +112,11 @@ func (m *BackgroundShellManager) List() []string {
 
 // KillAll terminates all background shells.
 func (m *BackgroundShellManager) KillAll() {
-	m.mu.Lock()
-	shells := make([]*BackgroundShell, 0, len(m.shells))
-	for _, shell := range m.shells {
+	shells := make([]*BackgroundShell, 0, m.shells.Len())
+	for shell := range m.shells.Seq() {
 		shells = append(shells, shell)
 	}
-	m.shells = make(map[string]*BackgroundShell)
-	m.mu.Unlock()
+	m.shells.Reset(map[string]*BackgroundShell{})
 
 	for _, shell := range shells {
 		shell.cancel()
