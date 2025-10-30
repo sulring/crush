@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -52,6 +54,13 @@ func FetchURLAndConvert(ctx context.Context, client *http.Client, url string) (s
 			return "", fmt.Errorf("failed to convert HTML to markdown: %w", err)
 		}
 		content = markdown
+	} else if strings.Contains(contentType, "application/json") || strings.Contains(contentType, "text/json") {
+		// Format JSON for better readability.
+		formatted, err := FormatJSON(content)
+		if err == nil {
+			content = formatted
+		}
+		// If formatting fails, keep original content.
 	}
 
 	return content, nil
@@ -67,4 +76,21 @@ func ConvertHTMLToMarkdown(html string) (string, error) {
 	}
 
 	return markdown, nil
+}
+
+// FormatJSON formats JSON content with proper indentation.
+func FormatJSON(content string) (string, error) {
+	var data interface{}
+	if err := json.Unmarshal([]byte(content), &data); err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }

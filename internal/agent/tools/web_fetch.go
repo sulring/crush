@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -33,10 +32,6 @@ func NewWebFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 		WebFetchToolName,
 		string(webFetchToolDescription),
 		func(ctx context.Context, params WebFetchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
-			}
-
 			if params.URL == "" {
 				return fantasy.NewTextErrorResponse("url is required"), nil
 			}

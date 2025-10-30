@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,13 +16,13 @@ import (
 	"github.com/charmbracelet/crush/internal/permission"
 )
 
-//go:embed templates/fetch.md
-var fetchToolDescription []byte
+//go:embed templates/agentic_fetch.md
+var agenticFetchToolDescription []byte
 
-//go:embed templates/fetch_prompt.md.tpl
-var fetchPromptTmpl []byte
+//go:embed templates/agentic_fetch_prompt.md.tpl
+var agenticFetchPromptTmpl []byte
 
-func (c *coordinator) fetchTool(_ context.Context, client *http.Client) (fantasy.AgentTool, error) {
+func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (fantasy.AgentTool, error) {
 	if client == nil {
 		client = &http.Client{
 			Timeout: 30 * time.Second,
@@ -36,13 +35,9 @@ func (c *coordinator) fetchTool(_ context.Context, client *http.Client) (fantasy
 	}
 
 	return fantasy.NewAgentTool(
-		tools.FetchToolName,
-		string(fetchToolDescription),
-		func(ctx context.Context, params tools.FetchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
-			}
-
+		tools.AgenticFetchToolName,
+		string(agenticFetchToolDescription),
+		func(ctx context.Context, params tools.AgenticFetchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.URL == "" {
 				return fantasy.NewTextErrorResponse("url is required"), nil
 			}
@@ -66,10 +61,10 @@ func (c *coordinator) fetchTool(_ context.Context, client *http.Client) (fantasy
 					SessionID:   sessionID,
 					Path:        c.cfg.WorkingDir(),
 					ToolCallID:  call.ID,
-					ToolName:    tools.FetchToolName,
+					ToolName:    tools.AgenticFetchToolName,
 					Action:      "fetch",
 					Description: fmt.Sprintf("Fetch and analyze content from URL: %s", params.URL),
-					Params:      tools.FetchPermissionsParams(params),
+					Params:      tools.AgenticFetchPermissionsParams(params),
 				},
 			)
 
@@ -113,7 +108,7 @@ func (c *coordinator) fetchTool(_ context.Context, client *http.Client) (fantasy
 				prompt.WithWorkingDir(tmpDir),
 			}
 
-			promptTemplate, err := prompt.NewPrompt("fetch", string(fetchPromptTmpl), promptOpts...)
+			promptTemplate, err := prompt.NewPrompt("agentic_fetch", string(agenticFetchPromptTmpl), promptOpts...)
 			if err != nil {
 				return fantasy.ToolResponse{}, fmt.Errorf("error creating prompt: %s", err)
 			}

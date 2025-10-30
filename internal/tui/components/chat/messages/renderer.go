@@ -168,7 +168,8 @@ func init() {
 	registry.register(tools.EditToolName, func() renderer { return editRenderer{} })
 	registry.register(tools.MultiEditToolName, func() renderer { return multiEditRenderer{} })
 	registry.register(tools.WriteToolName, func() renderer { return writeRenderer{} })
-	registry.register(tools.FetchToolName, func() renderer { return fetchRenderer{} })
+	registry.register(tools.FetchToolName, func() renderer { return simpleFetchRenderer{} })
+	registry.register(tools.AgenticFetchToolName, func() renderer { return agenticFetchRenderer{} })
 	registry.register(tools.WebFetchToolName, func() renderer { return webFetchRenderer{} })
 	registry.register(tools.GlobToolName, func() renderer { return globRenderer{} })
 	registry.register(tools.GrepToolName, func() renderer { return grepRenderer{} })
@@ -397,15 +398,54 @@ func (wr writeRenderer) Render(v *toolCallCmp) string {
 //  Fetch renderer
 // -----------------------------------------------------------------------------
 
-// fetchRenderer handles URL fetching with format-specific content display
-type fetchRenderer struct {
+// simpleFetchRenderer handles URL fetching with format-specific content display
+type simpleFetchRenderer struct {
+	baseRenderer
+}
+
+// Render displays the fetched URL with format and timeout parameters
+func (fr simpleFetchRenderer) Render(v *toolCallCmp) string {
+	var params tools.FetchParams
+	var args []string
+	if err := fr.unmarshalParams(v.call.Input, &params); err == nil {
+		args = newParamBuilder().
+			addMain(params.URL).
+			addKeyValue("format", params.Format).
+			addKeyValue("timeout", formatTimeout(params.Timeout)).
+			build()
+	}
+
+	return fr.renderWithParams(v, "Fetch", args, func() string {
+		file := fr.getFileExtension(params.Format)
+		return renderCodeContent(v, file, v.result.Content, 0)
+	})
+}
+
+// getFileExtension returns appropriate file extension for syntax highlighting
+func (fr simpleFetchRenderer) getFileExtension(format string) string {
+	switch format {
+	case "text":
+		return "fetch.txt"
+	case "html":
+		return "fetch.html"
+	default:
+		return "fetch.md"
+	}
+}
+
+// -----------------------------------------------------------------------------
+//  Agentic fetch renderer
+// -----------------------------------------------------------------------------
+
+// agenticFetchRenderer handles URL fetching with prompt parameter and nested tool calls
+type agenticFetchRenderer struct {
 	baseRenderer
 }
 
 // Render displays the fetched URL with prompt parameter and nested tool calls
-func (fr fetchRenderer) Render(v *toolCallCmp) string {
+func (fr agenticFetchRenderer) Render(v *toolCallCmp) string {
 	t := styles.CurrentTheme()
-	var params tools.FetchParams
+	var params tools.AgenticFetchParams
 	var args []string
 	if err := fr.unmarshalParams(v.call.Input, &params); err == nil {
 		args = newParamBuilder().
@@ -416,7 +456,7 @@ func (fr fetchRenderer) Render(v *toolCallCmp) string {
 	prompt := params.Prompt
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
 
-	header := fr.makeHeader(v, "Fetch", v.textWidth(), args...)
+	header := fr.makeHeader(v, "Agentic Fetch", v.textWidth(), args...)
 	if res, done := earlyState(header, v); v.cancelled && done {
 		return res
 	}
@@ -484,7 +524,7 @@ type webFetchRenderer struct {
 
 // Render displays a compact view of web_fetch with just the URL in a link style
 func (wfr webFetchRenderer) Render(v *toolCallCmp) string {
-	var params tools.FetchParams
+	var params tools.WebFetchParams
 	var args []string
 	if err := wfr.unmarshalParams(v.call.Input, &params); err == nil {
 		args = newParamBuilder().
@@ -979,6 +1019,8 @@ func prettifyToolName(name string) string {
 		return "Multi-Edit"
 	case tools.FetchToolName:
 		return "Fetch"
+	case tools.AgenticFetchToolName:
+		return "Agentic Fetch"
 	case tools.WebFetchToolName:
 		return "Fetching"
 	case tools.GlobToolName:

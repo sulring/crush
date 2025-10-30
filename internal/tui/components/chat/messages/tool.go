@@ -289,6 +289,19 @@ func (m *toolCallCmp) formatParametersForCopy() string {
 		if json.Unmarshal([]byte(m.call.Input), &params) == nil {
 			var parts []string
 			parts = append(parts, fmt.Sprintf("**URL:** %s", params.URL))
+			if params.Format != "" {
+				parts = append(parts, fmt.Sprintf("**Format:** %s", params.Format))
+			}
+			if params.Timeout > 0 {
+				parts = append(parts, fmt.Sprintf("**Timeout:** %ds", params.Timeout))
+			}
+			return strings.Join(parts, "\n")
+		}
+	case tools.AgenticFetchToolName:
+		var params tools.AgenticFetchParams
+		if json.Unmarshal([]byte(m.call.Input), &params) == nil {
+			var parts []string
+			parts = append(parts, fmt.Sprintf("**URL:** %s", params.URL))
 			if params.Prompt != "" {
 				parts = append(parts, fmt.Sprintf("**Prompt:** %s", params.Prompt))
 			}
@@ -397,6 +410,8 @@ func (m *toolCallCmp) formatResultForCopy() string {
 		return m.formatWriteResultForCopy()
 	case tools.FetchToolName:
 		return m.formatFetchResultForCopy()
+	case tools.AgenticFetchToolName:
+		return m.formatAgenticFetchResultForCopy()
 	case tools.WebFetchToolName:
 		return m.formatWebFetchResultForCopy()
 	case agent.AgentToolName:
@@ -604,6 +619,29 @@ func (m *toolCallCmp) formatWriteResultForCopy() string {
 
 func (m *toolCallCmp) formatFetchResultForCopy() string {
 	var params tools.FetchParams
+	if json.Unmarshal([]byte(m.call.Input), &params) != nil {
+		return m.result.Content
+	}
+
+	var result strings.Builder
+	if params.URL != "" {
+		result.WriteString(fmt.Sprintf("URL: %s\n", params.URL))
+	}
+	if params.Format != "" {
+		result.WriteString(fmt.Sprintf("Format: %s\n", params.Format))
+	}
+	if params.Timeout > 0 {
+		result.WriteString(fmt.Sprintf("Timeout: %ds\n", params.Timeout))
+	}
+	result.WriteString("\n")
+
+	result.WriteString(m.result.Content)
+
+	return result.String()
+}
+
+func (m *toolCallCmp) formatAgenticFetchResultForCopy() string {
+	var params tools.AgenticFetchParams
 	if json.Unmarshal([]byte(m.call.Input), &params) != nil {
 		return m.result.Content
 	}
