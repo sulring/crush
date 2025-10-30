@@ -483,7 +483,7 @@ func (fr agenticFetchRenderer) Render(v *toolCallCmp) string {
 		childTools.Child(call.View())
 	}
 	parts := []string{
-		childTools.Enumerator(RoundedEnumeratorWithWidth(2, lipgloss.Width(taskTag)-3)).String(),
+		childTools.Enumerator(RoundedEnumeratorWithWidth(2, lipgloss.Width(taskTag)-5)).String(),
 	}
 
 	if v.result.ToolCallID == "" {
@@ -748,7 +748,7 @@ func (tr agentRenderer) Render(v *toolCallCmp) string {
 		childTools.Child(call.View())
 	}
 	parts := []string{
-		childTools.Enumerator(RoundedEnumeratorWithWidth(2, lipgloss.Width(taskTag)-3)).String(),
+		childTools.Enumerator(RoundedEnumeratorWithWidth(2, lipgloss.Width(taskTag)-5)).String(),
 	}
 
 	if v.result.ToolCallID == "" {
