@@ -75,10 +75,8 @@ func NewCoordinator(
 	permissions permission.Service,
 	history history.Service,
 	lspClients *csync.Map[string, *lsp.Client],
+	hooksExecutor *hooks.Executor,
 ) (Coordinator, error) {
-	// Initialize hooks executor
-	hooksExecutor := hooks.NewExecutor(cfg.Hooks, cfg.WorkingDir())
-
 	c := &coordinator{
 		cfg:         cfg,
 		sessions:    sessions,

@@ -175,13 +175,15 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 
 	// Execute UserPromptSubmit hook
 	if a.hooks != nil {
-		_ = a.hooks.Execute(ctx, hooks.HookContext{
+		if err := a.hooks.Execute(ctx, hooks.HookContext{
 			EventType:  config.UserPromptSubmit,
 			SessionID:  call.SessionID,
 			UserPrompt: call.Prompt,
 			Provider:   a.largeModel.ModelCfg.Provider,
 			Model:      a.largeModel.ModelCfg.Model,
-		})
+		}); err != nil {
+			slog.Debug("user_prompt_submit hook execution failed", "error", err)
+		}
 	}
 
 	// add the session to the context
@@ -312,18 +314,19 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			// Execute PreToolUse hook - blocks tool execution on error
 			if a.hooks != nil {
 				toolInput := make(map[string]any)
-				if err := json.Unmarshal([]byte(tc.Input), &toolInput); err == nil {
-					if err := a.hooks.Execute(genCtx, hooks.HookContext{
-						EventType: config.PreToolUse,
-						SessionID: call.SessionID,
-						ToolName:  tc.ToolName,
-						ToolInput: toolInput,
-						MessageID: currentAssistant.ID,
-						Provider:  a.largeModel.ModelCfg.Provider,
-						Model:     a.largeModel.ModelCfg.Model,
-					}); err != nil {
-						return fmt.Errorf("PreToolUse hook blocked tool execution: %w", err)
-					}
+				if err := json.Unmarshal([]byte(tc.Input), &toolInput); err != nil {
+					slog.Warn("Failed to unmarshal tool input for PreToolUse hook", "error", err, "tool", tc.ToolName)
+				}
+				if err := a.hooks.Execute(genCtx, hooks.HookContext{
+					EventType: config.PreToolUse,
+					SessionID: call.SessionID,
+					ToolName:  tc.ToolName,
+					ToolInput: toolInput,
+					MessageID: currentAssistant.ID,
+					Provider:  a.largeModel.ModelCfg.Provider,
+					Model:     a.largeModel.ModelCfg.Model,
+				}); err != nil {
+					return fmt.Errorf("PreToolUse hook blocked tool execution: %w", err)
 				}
 			}
 
@@ -363,12 +366,14 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				toolCalls := currentAssistant.ToolCalls()
 				for _, tc := range toolCalls {
 					if tc.ID == result.ToolCallID {
-						_ = json.Unmarshal([]byte(tc.Input), &toolInput)
+						if err := json.Unmarshal([]byte(tc.Input), &toolInput); err != nil {
+							slog.Debug("Failed to unmarshal tool input for PostToolUse hook", "error", err, "tool", result.ToolName)
+						}
 						break
 					}
 				}
 
-				_ = a.hooks.Execute(genCtx, hooks.HookContext{
+				if err := a.hooks.Execute(genCtx, hooks.HookContext{
 					EventType:  config.PostToolUse,
 					SessionID:  call.SessionID,
 					ToolName:   result.ToolName,
@@ -378,7 +383,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 					MessageID:  currentAssistant.ID,
 					Provider:   a.largeModel.ModelCfg.Provider,
 					Model:      a.largeModel.ModelCfg.Model,
-				})
+				}); err != nil {
+					slog.Debug("post_tool_use hook execution failed", "error", err)
+				}
 			}
 
 			toolResult := message.ToolResult{
@@ -529,7 +536,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			inputTokens += step.Usage.InputTokens
 		}
 
-		_ = a.hooks.Execute(ctx, hooks.HookContext{
+		if err := a.hooks.Execute(ctx, hooks.HookContext{
 			EventType:   config.Stop,
 			SessionID:   call.SessionID,
 			MessageID:   currentAssistant.ID,
@@ -537,7 +544,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			Model:       a.largeModel.ModelCfg.Model,
 			TokensUsed:  totalTokens,
 			TokensInput: inputTokens,
-		})
+		}); err != nil {
+			slog.Debug("stop hook execution failed", "error", err)
+		}
 	}
 
 	if shouldSummarize {
@@ -587,6 +596,18 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 	if len(msgs) == 0 {
 		// nothing to summarize
 		return nil
+	}
+
+	// Execute PreCompact hook
+	if a.hooks != nil {
+		if err := a.hooks.Execute(ctx, hooks.HookContext{
+			EventType: config.PreCompact,
+			SessionID: sessionID,
+			Provider:  a.largeModel.ModelCfg.Provider,
+			Model:     a.largeModel.ModelCfg.Model,
+		}); err != nil {
+			slog.Debug("pre_compact hook execution failed", "error", err)
+		}
 	}
 
 	aiMsgs, _ := a.preparePrompt(msgs)

@@ -9,19 +9,17 @@ Hooks are user-defined shell commands that execute at various points in Crush's 
 Crush provides several lifecycle events where hooks can run:
 
 ### Tool Events
-- **`PreToolUse`**: Runs before tool calls. If a hook fails (non-zero exit code), the tool execution is blocked.
-- **`PostToolUse`**: Runs after tool calls complete, can be used to process results or trigger actions.
+- **`pre_tool_use`**: Runs before tool calls. If a hook fails (non-zero exit code), the tool execution is blocked.
+- **`post_tool_use`**: Runs after tool calls complete, can be used to process results or trigger actions.
 
 ### Session Events
-- **`UserPromptSubmit`**: Runs when the user submits a prompt, before processing
-- **`Stop`**: Runs when Crush finishes responding to a prompt
-- **`SubagentStop`**: Runs when subagent tasks complete (e.g., fetch tool, agent tool)
-- **`SessionStart`**: Runs when a session starts or resumes
-- **`SessionEnd`**: Runs when a session ends
+- **`user_prompt_submit`**: Runs when the user submits a prompt, before processing
+- **`stop`**: Runs when Crush finishes responding to a prompt
+- **`subagent_stop`**: Runs when subagent tasks complete (e.g., fetch tool, agent tool)
 
 ### Other Events
-- **`Notification`**: Runs when Crush sends notifications
-- **`PreCompact`**: Runs before running a compact operation
+- **`pre_compact`**: Runs before running a compact operation
+- **`permission_requested`**: Runs when a permission is requested from the user
 
 ## Configuration Format
 
@@ -30,7 +28,7 @@ Hooks are configured in your Crush configuration file (e.g., `crush.json` or `~/
 ```json
 {
   "hooks": {
-    "PreToolUse": [
+    "pre_tool_use": [
       {
         "matcher": "bash",
         "hooks": [
@@ -42,7 +40,7 @@ Hooks are configured in your Crush configuration file (e.g., `crush.json` or `~/
         ]
       }
     ],
-    "PostToolUse": [
+    "post_tool_use": [
       {
         "matcher": "*",
         "hooks": [
@@ -53,7 +51,7 @@ Hooks are configured in your Crush configuration file (e.g., `crush.json` or `~/
         ]
       }
     ],
-    "Stop": [
+    "stop": [
       {
         "hooks": [
           {
@@ -73,7 +71,7 @@ Each hook receives a JSON context object via stdin containing information about 
 
 ```json
 {
-  "event_type": "PreToolUse",
+  "event_type": "pre_tool_use",
   "session_id": "abc123",
   "tool_name": "bash",
   "tool_input": {
@@ -97,10 +95,10 @@ Each hook receives a JSON context object via stdin containing information about 
 
 Different events include different fields:
 
-- **PreToolUse**: `event_type`, `session_id`, `tool_name`, `tool_input`, `message_id`, `provider`, `model`
-- **PostToolUse**: `event_type`, `session_id`, `tool_name`, `tool_input`, `tool_result`, `tool_error`, `message_id`, `provider`, `model`
-- **UserPromptSubmit**: `event_type`, `session_id`, `user_prompt`, `provider`, `model`
-- **Stop**: `event_type`, `session_id`, `message_id`, `provider`, `model`, `tokens_used`, `tokens_input`
+- **pre_tool_use**: `event_type`, `session_id`, `tool_name`, `tool_input`, `message_id`, `provider`, `model`
+- **post_tool_use**: `event_type`, `session_id`, `tool_name`, `tool_input`, `tool_result`, `tool_error`, `message_id`, `provider`, `model`
+- **user_prompt_submit**: `event_type`, `session_id`, `user_prompt`, `provider`, `model`
+- **stop**: `event_type`, `session_id`, `message_id`, `provider`, `model`, `tokens_used`, `tokens_input`
 
 All events include: `event_type`, `timestamp`, `working_dir`
 
@@ -117,19 +115,26 @@ Hooks also receive environment variables:
 
 ### Matchers
 
-For tool events (`PreToolUse`, `PostToolUse`), you can specify matchers to target specific tools:
+For tool events (`pre_tool_use`, `post_tool_use`), you can specify matchers to target specific tools:
 
 - `"bash"` - Only matches the bash tool
 - `"edit"` - Only matches the edit tool
+- `"edit|write|multiedit"` - Matches any of the specified tools (pipe-separated)
 - `"*"` or `""` - Matches all tools
 
 For non-tool events, leave the matcher empty or use `"*"`.
 
-### Hook Properties
+### Hook Command
 
+Each hook has these properties:
 - `type`: Currently only `"command"` is supported
-- `command`: The shell command to execute
+- `command`: Shell command to execute. Receives JSON context via stdin
 - `timeout`: (optional) Maximum execution time in seconds (default: 30, max: 300)
+
+**Important**: When processing JSON with `jq`, be aware that `tool_result` fields can contain large content or special characters that may cause parse errors. For reliability:
+- Use `cat` instead of `jq` to output raw JSON: `cat >> hooks.log`
+- Extract only specific fields: `jq -r '.tool_name, .session_id'`
+- For `post_tool_use` hooks, tool results can be very large (e.g., entire file contents)
 
 ## Examples
 
@@ -138,7 +143,7 @@ For non-tool events, leave the matcher empty or use `"*"`.
 ```json
 {
   "hooks": {
-    "PreToolUse": [
+    "pre_tool_use": [
       {
         "matcher": "bash",
         "hooks": [
@@ -158,9 +163,9 @@ For non-tool events, leave the matcher empty or use `"*"`.
 ```json
 {
   "hooks": {
-    "PostToolUse": [
+    "post_tool_use": [
       {
-        "matcher": "edit",
+        "matcher": "edit|write|multiedit",
         "hooks": [
           {
             "type": "command",
@@ -175,10 +180,12 @@ For non-tool events, leave the matcher empty or use `"*"`.
 
 ### Notify on Completion
 
+Note: Examples use macOS-specific tools. For cross-platform alternatives, use `notify-send` (Linux) or custom scripts.
+
 ```json
 {
   "hooks": {
-    "Stop": [
+    "stop": [
       {
         "hooks": [
           {
@@ -197,7 +204,7 @@ For non-tool events, leave the matcher empty or use `"*"`.
 ```json
 {
   "hooks": {
-    "Stop": [
+    "stop": [
       {
         "hooks": [
           {
@@ -216,7 +223,7 @@ For non-tool events, leave the matcher empty or use `"*"`.
 ```json
 {
   "hooks": {
-    "PreToolUse": [
+    "pre_tool_use": [
       {
         "matcher": "bash",
         "hooks": [
@@ -238,7 +245,7 @@ You can execute multiple hooks for the same event:
 ```json
 {
   "hooks": {
-    "PostToolUse": [
+    "post_tool_use": [
       {
         "matcher": "*",
         "hooks": [
@@ -249,6 +256,98 @@ You can execute multiple hooks for the same event:
           {
             "type": "command",
             "command": "if jq -e .tool_error > /dev/null; then echo 'Error in tool' | pbcopy; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Debug: Log All Hook Events
+
+For debugging or monitoring, log complete JSON for all events:
+
+```json
+{
+  "hooks": {
+    "pre_tool_use": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "(echo \"[$(date '+%Y-%m-%d %H:%M:%S')] pre_tool_use:\" && cat && echo \"\") >> hooks.log"
+          }
+        ]
+      }
+    ],
+    "post_tool_use": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "(echo \"[$(date '+%Y-%m-%d %H:%M:%S')] post_tool_use:\" && cat && echo \"\") >> hooks.log"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Note: Using `cat` avoids potential jq parsing errors with large or complex tool results.
+
+### Track Subagent Completion
+
+```json
+{
+  "hooks": {
+    "subagent_stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"Subagent task completed: $(jq -r .tool_name)\" | tee -a ~/.crush/subagent-log.txt"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Pre-Compact Notification
+
+```json
+{
+  "hooks": {
+    "pre_compact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Compacting conversation...\" with title \"Crush\"'"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Permission Requested Notification
+
+```json
+{
+  "hooks": {
+    "permission_requested": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '\"Permission requested: \\(.tool_name) \\(.permission_action) \\(.permission_path)\"' | tee -a ~/.crush/permissions-log.txt"
           }
         ]
       }
@@ -275,7 +374,7 @@ Hooks log errors and warnings to Crush's log output. To see hook execution:
 2. Check the logs for hook-related messages
 3. Test hook shell commands manually:
    ```bash
-   echo '{"event_type":"PreToolUse","tool_name":"bash"}' | jq -r '.tool_name'
+   echo '{"event_type":"pre_tool_use","tool_name":"bash"}' | jq -r '.tool_name'
    ```
 
 ## Limitations
@@ -283,5 +382,5 @@ Hooks log errors and warnings to Crush's log output. To see hook execution:
 - Hooks must complete within their timeout (default 30 seconds)
 - Hooks run in a shell environment and require shell utilities (bash, jq, etc.)
 - Hooks cannot modify Crush's internal state
-- Hook errors are logged but don't stop Crush execution (except for PreToolUse)
+- Hook errors are logged but don't stop Crush execution (except for pre_tool_use)
 - Interactive hooks are not supported

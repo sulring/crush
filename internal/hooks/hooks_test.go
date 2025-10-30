@@ -223,6 +223,61 @@ func TestHookExecutor_MatcherApplies(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "pipe-separated matcher matches first tool",
+			matcher: config.HookMatcher{
+				Matcher: "edit|write|multiedit",
+			},
+			ctx: HookContext{
+				EventType: config.PreToolUse,
+				ToolName:  "edit",
+			},
+			want: true,
+		},
+		{
+			name: "pipe-separated matcher matches middle tool",
+			matcher: config.HookMatcher{
+				Matcher: "edit|write|multiedit",
+			},
+			ctx: HookContext{
+				EventType: config.PreToolUse,
+				ToolName:  "write",
+			},
+			want: true,
+		},
+		{
+			name: "pipe-separated matcher matches last tool",
+			matcher: config.HookMatcher{
+				Matcher: "edit|write|multiedit",
+			},
+			ctx: HookContext{
+				EventType: config.PreToolUse,
+				ToolName:  "multiedit",
+			},
+			want: true,
+		},
+		{
+			name: "pipe-separated matcher doesn't match different tool",
+			matcher: config.HookMatcher{
+				Matcher: "edit|write|multiedit",
+			},
+			ctx: HookContext{
+				EventType: config.PreToolUse,
+				ToolName:  "bash",
+			},
+			want: false,
+		},
+		{
+			name: "pipe-separated matcher with spaces",
+			matcher: config.HookMatcher{
+				Matcher: "edit | write | multiedit",
+			},
+			ctx: HookContext{
+				EventType: config.PreToolUse,
+				ToolName:  "write",
+			},
+			want: true,
+		},
+		{
 			name: "non-tool event matches empty matcher",
 			matcher: config.HookMatcher{
 				Matcher: "",
@@ -323,6 +378,68 @@ func TestHookExecutor_MultipleHooks(t *testing.T) {
 	require.Equal(t, "hook1", lines[0])
 	require.Equal(t, "hook2", lines[1])
 	require.Equal(t, "hook3", lines[2])
+}
+
+func TestHookExecutor_PipeSeparatedMatcher(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	logFile := filepath.Join(tempDir, "pipe-matcher-log.txt")
+
+	hookConfig := config.HookConfig{
+		config.PostToolUse: []config.HookMatcher{
+			{
+				Matcher: "edit|write|multiedit",
+				Hooks: []config.Hook{
+					{
+						Type:    "command",
+						Command: `jq -r '.tool_name' >> ` + logFile,
+					},
+				},
+			},
+		},
+	}
+
+	executor := NewExecutor(hookConfig, tempDir)
+	ctx := context.Background()
+
+	// Test that edit triggers the hook
+	err := executor.Execute(ctx, HookContext{
+		EventType: config.PostToolUse,
+		ToolName:  "edit",
+	})
+	require.NoError(t, err)
+
+	// Test that write triggers the hook
+	err = executor.Execute(ctx, HookContext{
+		EventType: config.PostToolUse,
+		ToolName:  "write",
+	})
+	require.NoError(t, err)
+
+	// Test that multiedit triggers the hook
+	err = executor.Execute(ctx, HookContext{
+		EventType: config.PostToolUse,
+		ToolName:  "multiedit",
+	})
+	require.NoError(t, err)
+
+	// Test that bash does NOT trigger the hook
+	err = executor.Execute(ctx, HookContext{
+		EventType: config.PostToolUse,
+		ToolName:  "bash",
+	})
+	require.NoError(t, err)
+
+	// Verify only the matching tools were logged
+	content, err := os.ReadFile(logFile)
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	require.Len(t, lines, 3)
+	require.Equal(t, "edit", lines[0])
+	require.Equal(t, "write", lines[1])
+	require.Equal(t, "multiedit", lines[2])
 }
 
 func TestHookExecutor_ContextCancellation(t *testing.T) {

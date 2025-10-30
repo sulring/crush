@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
@@ -15,20 +16,24 @@ const DefaultHookTimeout = 30 * time.Second
 
 // HookContext contains context information passed to hooks.
 type HookContext struct {
-	EventType   config.HookEventType `json:"event_type"`
-	SessionID   string               `json:"session_id,omitempty"`
-	ToolName    string               `json:"tool_name,omitempty"`
-	ToolInput   map[string]any       `json:"tool_input,omitempty"`
-	ToolResult  string               `json:"tool_result,omitempty"`
-	ToolError   bool                 `json:"tool_error,omitempty"`
-	UserPrompt  string               `json:"user_prompt,omitempty"`
-	Timestamp   time.Time            `json:"timestamp"`
-	WorkingDir  string               `json:"working_dir,omitempty"`
-	MessageID   string               `json:"message_id,omitempty"`
-	Provider    string               `json:"provider,omitempty"`
-	Model       string               `json:"model,omitempty"`
-	TokensUsed  int64                `json:"tokens_used,omitempty"`
-	TokensInput int64                `json:"tokens_input,omitempty"`
+	EventType          config.HookEventType `json:"event_type"`
+	SessionID          string               `json:"session_id,omitempty"`
+	ToolName           string               `json:"tool_name,omitempty"`
+	ToolInput          map[string]any       `json:"tool_input,omitempty"`
+	ToolResult         string               `json:"tool_result,omitempty"`
+	ToolError          bool                 `json:"tool_error,omitempty"`
+	UserPrompt         string               `json:"user_prompt,omitempty"`
+	Timestamp          time.Time            `json:"timestamp"`
+	WorkingDir         string               `json:"working_dir,omitempty"`
+	MessageID          string               `json:"message_id,omitempty"`
+	Provider           string               `json:"provider,omitempty"`
+	Model              string               `json:"model,omitempty"`
+	TokensUsed         int64                `json:"tokens_used,omitempty"`
+	TokensInput        int64                `json:"tokens_input,omitempty"`
+	PermissionAction   string               `json:"permission_action,omitempty"`
+	PermissionPath     string               `json:"permission_path,omitempty"`
+	PermissionParams   any                  `json:"permission_params,omitempty"`
+	PermissionToolCall string               `json:"permission_tool_call,omitempty"`
 }
 
 // Executor executes hooks based on configuration.
@@ -96,10 +101,38 @@ func (e *Executor) matcherApplies(matcher config.HookMatcher, ctx HookContext) b
 	}
 
 	if ctx.EventType == config.PreToolUse || ctx.EventType == config.PostToolUse {
-		return matcher.Matcher == ctx.ToolName
+		return matchesToolName(matcher.Matcher, ctx.ToolName)
 	}
 
+	// For non-tool events, only empty or wildcard matchers apply
 	return matcher.Matcher == "" || matcher.Matcher == "*"
+}
+
+// matchesToolName supports pipe-separated patterns like "edit|write|multiedit".
+func matchesToolName(pattern, toolName string) bool {
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+
+	// Check for exact match first
+	if pattern == toolName {
+		return true
+	}
+
+	// Check if pattern contains pipes (multiple tool names)
+	if !strings.Contains(pattern, "|") {
+		return false
+	}
+
+	// Split by pipe and check each tool name
+	for tool := range strings.SplitSeq(pattern, "|") {
+		tool = strings.TrimSpace(tool)
+		if tool == toolName {
+			return true
+		}
+	}
+
+	return false
 }
 
 // executeHook executes a single hook command.

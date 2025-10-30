@@ -136,10 +136,10 @@
       "properties": {
         "matcher": {
           "type": "string",
-          "description": "Tool name or pattern to match (e.g. 'bash' or '*' for all)",
+          "description": "Tool name or pattern to match (e.g. 'bash' 'edit|write' for multiple or '*' for all)",
           "examples": [
             "bash",
-            "edit",
+            "edit|write|multiedit",
             "*"
           ]
         },

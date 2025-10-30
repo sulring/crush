@@ -114,7 +114,7 @@ func testEnv(t *testing.T) env {
 	sessions := session.NewService(q)
 	messages := message.NewService(q)
 
-	permissions := permission.NewPermissionService(workingDir, true, []string{})
+	permissions := permission.NewPermissionService(workingDir, true, []string{}, nil)
 	history := history.NewService(q, conn)
 	lspClients := csync.NewMap[string, *lsp.Client]()
 
