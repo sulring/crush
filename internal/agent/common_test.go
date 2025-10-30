@@ -179,6 +179,7 @@ func coderAgent(r *recorder.Recorder, env env, large, small fantasy.LanguageMode
 		tools.NewDownloadTool(env.permissions, env.workingDir, r.GetDefaultClient()),
 		tools.NewEditTool(env.lspClients, env.permissions, env.history, env.workingDir),
 		tools.NewMultiEditTool(env.lspClients, env.permissions, env.history, env.workingDir),
+		tools.NewFetchTool(env.permissions, env.workingDir, r.GetDefaultClient()),
 		tools.NewGlobTool(env.workingDir),
 		tools.NewGrepTool(env.workingDir),
 		tools.NewLsTool(env.permissions, env.workingDir, cfg.Tools.Ls),
