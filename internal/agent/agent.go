@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,6 +23,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/hooks"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/session"
@@ -76,6 +78,7 @@ type sessionAgent struct {
 	messages             message.Service
 	disableAutoSummarize bool
 	isYolo               bool
+	hooks                *hooks.Executor
 
 	messageQueue   *csync.Map[string, []SessionAgentCall]
 	activeRequests *csync.Map[string, context.CancelFunc]
@@ -91,6 +94,7 @@ type SessionAgentOptions struct {
 	Sessions             session.Service
 	Messages             message.Service
 	Tools                []fantasy.AgentTool
+	Hooks                *hooks.Executor
 }
 
 func NewSessionAgent(
@@ -106,6 +110,7 @@ func NewSessionAgent(
 		disableAutoSummarize: opts.DisableAutoSummarize,
 		tools:                opts.Tools,
 		isYolo:               opts.IsYolo,
+		hooks:                opts.Hooks,
 		messageQueue:         csync.NewMap[string, []SessionAgentCall](),
 		activeRequests:       csync.NewMap[string, context.CancelFunc](),
 	}
@@ -166,6 +171,17 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	_, err = a.createUserMessage(ctx, call)
 	if err != nil {
 		return nil, err
+	}
+
+	// Execute UserPromptSubmit hook
+	if a.hooks != nil {
+		_ = a.hooks.Execute(ctx, hooks.HookContext{
+			EventType:  config.UserPromptSubmit,
+			SessionID:  call.SessionID,
+			UserPrompt: call.Prompt,
+			Provider:   a.largeModel.ModelCfg.Provider,
+			Model:      a.largeModel.ModelCfg.Model,
+		})
 	}
 
 	// add the session to the context
@@ -293,6 +309,24 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			// TODO: implement
 		},
 		OnToolCall: func(tc fantasy.ToolCallContent) error {
+			// Execute PreToolUse hook - blocks tool execution on error
+			if a.hooks != nil {
+				toolInput := make(map[string]any)
+				if err := json.Unmarshal([]byte(tc.Input), &toolInput); err == nil {
+					if err := a.hooks.Execute(genCtx, hooks.HookContext{
+						EventType: config.PreToolUse,
+						SessionID: call.SessionID,
+						ToolName:  tc.ToolName,
+						ToolInput: toolInput,
+						MessageID: currentAssistant.ID,
+						Provider:  a.largeModel.ModelCfg.Provider,
+						Model:     a.largeModel.ModelCfg.Model,
+					}); err != nil {
+						return fmt.Errorf("PreToolUse hook blocked tool execution: %w", err)
+					}
+				}
+			}
+
 			toolCall := message.ToolCall{
 				ID:               tc.ToolCallID,
 				Name:             tc.ToolName,
@@ -321,6 +355,32 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			case fantasy.ToolResultContentTypeMedia:
 				// TODO: handle this message type
 			}
+
+			// Execute PostToolUse hook
+			if a.hooks != nil {
+				toolInput := make(map[string]any)
+				// Try to get tool input from the assistant message
+				toolCalls := currentAssistant.ToolCalls()
+				for _, tc := range toolCalls {
+					if tc.ID == result.ToolCallID {
+						_ = json.Unmarshal([]byte(tc.Input), &toolInput)
+						break
+					}
+				}
+
+				_ = a.hooks.Execute(genCtx, hooks.HookContext{
+					EventType:  config.PostToolUse,
+					SessionID:  call.SessionID,
+					ToolName:   result.ToolName,
+					ToolInput:  toolInput,
+					ToolResult: resultContent,
+					ToolError:  isError,
+					MessageID:  currentAssistant.ID,
+					Provider:   a.largeModel.ModelCfg.Provider,
+					Model:      a.largeModel.ModelCfg.Model,
+				})
+			}
+
 			toolResult := message.ToolResult{
 				ToolCallID: result.ToolCallID,
 				Name:       result.ToolName,
@@ -460,6 +520,25 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		return nil, err
 	}
 	wg.Wait()
+
+	// Execute Stop hook
+	if a.hooks != nil && result != nil {
+		var totalTokens, inputTokens int64
+		for _, step := range result.Steps {
+			totalTokens += step.Usage.TotalTokens
+			inputTokens += step.Usage.InputTokens
+		}
+
+		_ = a.hooks.Execute(ctx, hooks.HookContext{
+			EventType:   config.Stop,
+			SessionID:   call.SessionID,
+			MessageID:   currentAssistant.ID,
+			Provider:    a.largeModel.ModelCfg.Provider,
+			Model:       a.largeModel.ModelCfg.Model,
+			TokensUsed:  totalTokens,
+			TokensInput: inputTokens,
+		})
+	}
 
 	if shouldSummarize {
 		a.activeRequests.Del(call.SessionID)
