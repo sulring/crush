@@ -169,9 +169,7 @@ func (e *Executor) executeHook(ctx context.Context, hook config.Hook, hookCtx Ho
 		"timeout", timeout,
 	)
 
-	fullCommand := fmt.Sprintf("%s <<'CRUSH_HOOK_EOF'\n%s\nCRUSH_HOOK_EOF\n", hook.Command, string(contextJSON))
-
-	stdout, stderr, err := e.shell.Exec(execCtx, fullCommand)
+	stdout, stderr, err := e.shell.ExecWithStdin(execCtx, hook.Command, string(contextJSON))
 	if err != nil {
 		return fmt.Errorf("hook command failed: %w: stdout=%s stderr=%s", err, stdout, stderr)
 	}
