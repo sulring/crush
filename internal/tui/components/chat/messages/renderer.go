@@ -456,7 +456,7 @@ func (fr agenticFetchRenderer) Render(v *toolCallCmp) string {
 	prompt := params.Prompt
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
 
-	header := fr.makeHeader(v, "Agentic Fetch", v.textWidth(), args...)
+	header := fr.makeHeader(v, "Agent Fetch", v.textWidth(), args...)
 	if res, done := earlyState(header, v); v.cancelled && done {
 		return res
 	}
@@ -464,7 +464,7 @@ func (fr agenticFetchRenderer) Render(v *toolCallCmp) string {
 	taskTag := t.S().Base.Bold(true).Padding(0, 1).MarginLeft(2).Background(t.GreenLight).Foreground(t.Border).Render("Prompt")
 	remainingWidth := v.textWidth() - (lipgloss.Width(taskTag) + 1)
 	remainingWidth = min(remainingWidth, 120-(lipgloss.Width(taskTag)+1))
-	prompt = t.S().Muted.Width(remainingWidth).Render(prompt)
+	prompt = t.S().Base.Width(remainingWidth).Render(prompt)
 	header = lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
@@ -783,9 +783,6 @@ func renderParamList(nested bool, paramsWidth int, params ...string) string {
 	}
 
 	if len(params) == 1 {
-		if nested {
-			return t.S().Muted.Render(mainParam)
-		}
 		return t.S().Subtle.Render(mainParam)
 	}
 	otherParams := params[1:]
@@ -807,9 +804,6 @@ func renderParamList(nested bool, paramsWidth int, params ...string) string {
 	partsRendered := strings.Join(parts, ", ")
 	remainingWidth := paramsWidth - lipgloss.Width(partsRendered) - 3 // count for " ()"
 	if remainingWidth < 30 {
-		if nested {
-			return t.S().Muted.Render(mainParam)
-		}
 		// No space for the params, just show the main
 		return t.S().Subtle.Render(mainParam)
 	}
@@ -818,9 +812,6 @@ func renderParamList(nested bool, paramsWidth int, params ...string) string {
 		mainParam = fmt.Sprintf("%s (%s)", mainParam, strings.Join(parts, ", "))
 	}
 
-	if nested {
-		return t.S().Muted.Render(ansi.Truncate(mainParam, paramsWidth, "…"))
-	}
 	return t.S().Subtle.Render(ansi.Truncate(mainParam, paramsWidth, "…"))
 }
 
