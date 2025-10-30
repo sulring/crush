@@ -23,7 +23,14 @@ Crush provides several lifecycle events where hooks can run:
 
 ## Configuration Format
 
-Hooks are configured in your Crush configuration file (e.g., `crush.json` or `~/.crush/crush.json`):
+Hooks are configured in your Crush configuration file. Configuration files are searched in the following order:
+
+1. `.crush.json` (project-specific, hidden)
+2. `crush.json` (project-specific)
+3. `$HOME/.config/crush/crush.json` (global, Linux/macOS)
+   or `%LOCALAPPDATA%\crush\crush.json` (global, Windows)
+
+Example configuration:
 
 ```json
 {
@@ -149,7 +156,7 @@ Each hook has these properties:
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.timestamp + \" - \" + .tool_input.command' >> ~/.crush/bash-log.txt"
+            "command": "jq -r '.timestamp + \" - \" + .tool_input.command' >> ~/crush-bash.log"
           }
         ]
       }
@@ -209,7 +216,7 @@ Note: Examples use macOS-specific tools. For cross-platform alternatives, use `n
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '\"\\(.timestamp): \\(.tokens_used) tokens\"' >> ~/.crush/token-usage.log"
+            "command": "jq -r '\"\\(.timestamp): \\(.tokens_used) tokens\"' >> ~/crush-tokens.log"
           }
         ]
       }
@@ -251,7 +258,7 @@ You can execute multiple hooks for the same event:
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r .tool_name >> ~/.crush/tool-usage.log"
+            "command": "jq -r .tool_name >> ~/crush-tools.log"
           },
           {
             "type": "command",
@@ -309,7 +316,7 @@ Note: Using `cat` avoids potential jq parsing errors with large or complex tool 
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"Subagent task completed: $(jq -r .tool_name)\" | tee -a ~/.crush/subagent-log.txt"
+            "command": "echo \"Subagent task completed: $(jq -r .tool_name)\" | tee -a ~/crush-subagent.log"
           }
         ]
       }
@@ -347,7 +354,7 @@ Note: Using `cat` avoids potential jq parsing errors with large or complex tool 
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '\"Permission requested: \\(.tool_name) \\(.permission_action) \\(.permission_path)\"' | tee -a ~/.crush/permissions-log.txt"
+            "command": "jq -r '\"Permission requested: \\(.tool_name) \\(.permission_action) \\(.permission_path)\"' | tee -a ~/crush-permissions.log"
           }
         ]
       }
