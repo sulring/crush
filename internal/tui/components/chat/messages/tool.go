@@ -771,10 +771,10 @@ func (m *toolCallCmp) style() lipgloss.Style {
 	if m.isNested {
 		return t.S().Muted
 	}
-	style := t.S().Muted.PaddingLeft(4)
+	style := t.S().Muted.PaddingLeft(2)
 
 	if m.focused {
-		style = style.PaddingLeft(3).BorderStyle(focusedMessageBorder).BorderLeft(true).BorderForeground(t.GreenDark)
+		style = style.PaddingLeft(1).BorderStyle(focusedMessageBorder).BorderLeft(true).BorderForeground(t.GreenDark)
 	}
 	return style
 }
