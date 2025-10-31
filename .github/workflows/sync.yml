@@ -1,27 +1,108 @@
-name: Sync with Upstream
+name: Sync and Build with Upstream
 on:
   schedule:
-    - cron: '0 0 * * *'  # Daily at midnight
+    - cron: '0 */6 * * *'  # Every 6 hours to catch new tags
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  sync:
+  sync-and-build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Configure Git
-        run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "7470800+sulring@users.noreply.github.com"
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      
+      - name: Install Task
+        uses: arduino/setup-task@v1
+        with:
+          version: latest
+      
       - name: Add upstream remote
         run: git remote add upstream https://github.com/charmbracelet/crush.git
-      - name: Fetch upstream
-        run: git fetch upstream
-      - name: Rebase custom branch onto upstream main
+      
+      - name: Fetch upstream tags and branches
+        run: |
+          git fetch upstream --tags
+          git fetch upstream main
+      
+      - name: Get current and latest tags
+        id: tags
+        run: |
+          CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LATEST_TAG=$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || echo "v0.0.0")
+          echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Current: $CURRENT_TAG, Latest: $LATEST_TAG"
+      
+      - name: Check if update needed
+        id: check
+        run: |
+          if [ "${{ steps.tags.outputs.current_tag }}" = "${{ steps.tags.outputs.latest_tag }}" ]; then
+            echo "update_needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "update_needed=true" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Rebase custom branch onto latest tag
+        if: steps.check.outputs.update_needed == 'true'
         run: |
           git checkout custom-keyboard-mappings
           git rebase upstream/main
           git push origin custom-keyboard-mappings --force-with-lease
+      
+      - name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
+        run: |
+          VERSION=${{ steps.tags.outputs.latest_tag }}
+          BINARY_NAME=crush-${{ matrix.goos }}-${{ matrix.goarch }}
+          
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME=${BINARY_NAME}.exe
+          fi
+          
+          # Set environment variables for cross-compilation
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          export CGO_ENABLED=0
+          
+          # Build with version info
+          task build
+          mv crush ${BINARY_NAME}
+        env:
+          GOEXPERIMENT: greenteagc
+      
+      - name: Create release
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64' && steps.check.outputs.update_needed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tags.outputs.latest_tag }}
+          name: ${{ steps.tags.outputs.latest_tag }}
+          body: |
+            Auto-built version of crush with custom keyboard mappings
+            
+            Based on upstream tag: ${{ steps.tags.outputs.latest_tag }}
+            
+            Changes:
+            - Custom keyboard key mappings across components
+            - Rebased on latest upstream changes
+          draft: false
+          prerelease: false
+          files: |
+            crush-*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
