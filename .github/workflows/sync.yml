@@ -14,8 +14,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Configure Git
         run: |
-          git config user.name "sulring"
-          git config user.email "your-email@example.com"
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
       - name: Add upstream remote
         run: git remote add upstream https://github.com/charmbracelet/crush.git
       - name: Fetch upstream
