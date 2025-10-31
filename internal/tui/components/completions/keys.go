@@ -36,8 +36,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+n", "insert next"),
 		),
 		UpInsert: key.NewBinding(
-			key.WithKeys("ctrl+p"),
-			key.WithHelp("ctrl+p", "insert previous"),
+			key.WithKeys("ctrl+o"),
+			key.WithHelp("ctrl+o", "insert previous"),
 		),
 	}
 }

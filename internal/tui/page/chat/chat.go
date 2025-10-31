@@ -1012,8 +1012,8 @@ func (p *chatPage) Help() help.KeyMap {
 			globalBindings = append(globalBindings, tabKey)
 		}
 		commandsBinding := key.NewBinding(
-			key.WithKeys("ctrl+p"),
-			key.WithHelp("ctrl+p", "commands"),
+			key.WithKeys("ctrl+o"),
+			key.WithHelp("ctrl+o", "commands"),
 		)
 		modelsBinding := key.NewBinding(
 			key.WithKeys("ctrl+m", "ctrl+l"),
@@ -1124,8 +1124,8 @@ func (p *chatPage) Help() help.KeyMap {
 						key.WithHelp("@", "mention file"),
 					),
 					key.NewBinding(
-						key.WithKeys("ctrl+o"),
-						key.WithHelp("ctrl+o", "open editor"),
+						key.WithKeys("ctrl+e"),
+						key.WithHelp("ctrl+e", "open editor"),
 					),
 				})
 

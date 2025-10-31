@@ -23,7 +23,7 @@ func DefaultCommandsDialogKeyMap() CommandsDialogKeyMap {
 			key.WithHelp("↓", "next item"),
 		),
 		Previous: key.NewBinding(
-			key.WithKeys("up", "ctrl+p"),
+			key.WithKeys("up", "ctrl+o"),
 			key.WithHelp("↑", "previous item"),
 		),
 		Tab: key.NewBinding(

@@ -22,8 +22,8 @@ func DefaultEditorKeyMap() EditorKeyMap {
 			key.WithHelp("enter", "send"),
 		),
 		OpenEditor: key.NewBinding(
-			key.WithKeys("ctrl+o"),
-			key.WithHelp("ctrl+o", "open editor"),
+			key.WithKeys("ctrl+e"),
+			key.WithHelp("ctrl+e", "open editor"),
 		),
 		Newline: key.NewBinding(
 			key.WithKeys("shift+enter", "ctrl+j"),

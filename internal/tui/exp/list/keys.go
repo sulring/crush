@@ -24,7 +24,7 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("↓", "down"),
 		),
 		Up: key.NewBinding(
-			key.WithKeys("up", "ctrl+k", "ctrl+p", "k"),
+			key.WithKeys("up", "ctrl+k", "ctrl+o", "k"),
 			key.WithHelp("↑", "up"),
 		),
 		UpOneItem: key.NewBinding(

@@ -61,8 +61,8 @@ func DefaultReasoningDialogKeyMap() ReasoningDialogKeyMap {
 			key.WithHelp("↓/j/ctrl+n", "next"),
 		),
 		Previous: key.NewBinding(
-			key.WithKeys("up", "k", "ctrl+p"),
-			key.WithHelp("↑/k/ctrl+p", "previous"),
+			key.WithKeys("up", "k", "ctrl+o"),
+			key.WithHelp("↑/k/ctrl+o", "previous"),
 		),
 		Select: key.NewBinding(
 			key.WithKeys("enter"),
