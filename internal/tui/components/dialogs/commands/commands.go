@@ -426,7 +426,7 @@ func (c *commandDialogCmp) defaultCommands() []Command {
 		commands = append(commands, Command{
 			ID:          "open_external_editor",
 			Title:       "Open External Editor",
-			Shortcut:    "ctrl+o",
+			Shortcut:    "ctrl+e",
 			Description: "Open external editor to compose message",
 			Handler: func(cmd Command) tea.Cmd {
 				return util.CmdHandler(OpenExternalEditorMsg{})
