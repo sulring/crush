@@ -467,7 +467,7 @@ func (fr agenticFetchRenderer) Render(v *toolCallCmp) string {
 	prompt := params.Prompt
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
 
-	header := fr.makeHeader(v, "Agent Fetch", v.textWidth(), args...)
+	header := fr.makeHeader(v, "Agentic Fetch", v.textWidth(), args...)
 	if res, done := earlyState(header, v); v.cancelled && done {
 		return res
 	}
