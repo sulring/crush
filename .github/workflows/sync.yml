@@ -80,11 +80,14 @@ jobs:
           git config user.email "7470800+sulring@users.noreply.github.com"
           git checkout custom-keyboard-mappings
           # Attempt rebase
-          if ! git rebase upstream/${{ steps.target.outputs.target_tag }}; then
-            echo "Rebase failed - aborting and creating issue"
-            git rebase --abort || true
-            echo "::error::Rebase failed due to merge conflicts. Manual resolution required."
-            exit 1
+          TARGET=${{ steps.target.outputs.target_tag }}
+          # Try rebase on tag first, fallback to main if tag doesn't exist
+          if git rev-parse $TARGET >/dev/null 2>&1; then
+            echo "Rebasing onto tag: $TARGET"
+            git rebase $TARGET
+          else
+            echo "Tag $TARGET not found, rebasing onto main"
+            git rebase upstream/main
           fi
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
