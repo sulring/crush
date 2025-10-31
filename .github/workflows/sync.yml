@@ -41,6 +41,13 @@ jobs:
           echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "Current: $CURRENT_TAG, Latest: $LATEST_TAG"
+          
+          # Delete existing tag to avoid conflicts
+          if git rev-parse $LATEST_TAG >/dev/null 2>&1; then
+            echo "Deleting existing tag $LATEST_TAG"
+            git tag -d $LATEST_TAG || true
+            git push origin :refs/tags/$LATEST_TAG || true
+          fi
       
       - name: Check if update needed
         id: check
@@ -75,11 +82,6 @@ jobs:
           fi
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
-          # Delete existing tag first, then create new one
-          if git rev-parse ${{ steps.target.outputs.target_tag }} >/dev/null 2>&1; then
-            echo "Deleting existing tag ${{ steps.target.outputs.target_tag }}"
-            git push origin :refs/tags/${{ steps.target.outputs.target_tag }} || true
-          fi
           echo "Creating new tag ${{ steps.target.outputs.target_tag }}"
           git tag ${{ steps.target.outputs.target_tag }}
           git push origin ${{ steps.target.outputs.target_tag }}
