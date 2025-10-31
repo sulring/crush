@@ -640,7 +640,7 @@ func (s *splashCmp) View() string {
 			bodyStyle.Render("When I initialize your codebase I examine the project and put the"),
 			bodyStyle.Render(fmt.Sprintf("result into an %s file which serves as general context.", initFile)),
 			"",
-			bodyStyle.Render("You can also initialize anytime via ")+shortcutStyle.Render("ctrl+p")+bodyStyle.Render("."),
+			bodyStyle.Render("You can also initialize anytime via ")+shortcutStyle.Render("ctrl+o")+bodyStyle.Render("."),
 			"",
 			bodyStyle.Render("Would you like to initialize now?"),
 		)
