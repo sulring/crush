@@ -118,5 +118,32 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: crush-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: crush-*
+  release:
+    needs: [sync-and-build, build]
+    if: needs.sync-and-build.outputs.update_needed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.sync-and-build.outputs.target_tag }}
+          name: ${{ needs.sync-and-build.outputs.target_tag }} (Custom Keyboard Mappings)
+          body: |
+            Auto-built version of crush with custom keyboard mappings
+            
+            Based on upstream tag: ${{ needs.sync-and-build.outputs.target_tag }}
+            
+            Changes:
+            - Custom keyboard key mappings across components
+            - Rebased on latest upstream changes
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/*/crush-*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
