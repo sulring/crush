@@ -30,7 +30,7 @@ jobs:
       
       - name: Fetch upstream tags and branches
         run: |
-          git fetch upstream --tags
+          git fetch upstream --tags --force
           git fetch upstream main
       
       - name: Get current and latest tags
