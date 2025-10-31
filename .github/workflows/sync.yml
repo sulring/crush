@@ -3,35 +3,18 @@ on:
   schedule:
     - cron: '0 */6 * * *'  # Every 6 hours to catch new tags
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 jobs:
   sync-and-build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux, darwin, windows]
-        goarch: [amd64, arm64]
-        exclude:
-          - goos: windows
-            goarch: arm64
+    outputs:
+      update_needed: ${{ steps.check.outputs.update_needed }}
+      latest_tag: ${{ steps.tags.outputs.latest_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-      
-      - name: Install Task
-        uses: arduino/setup-task@v1
-        with:
-          version: latest
       
       - name: Add upstream remote
         run: git remote add upstream https://github.com/charmbracelet/crush.git
@@ -59,50 +42,55 @@ jobs:
             echo "update_needed=true" >> $GITHUB_OUTPUT
           fi
       
-      - name: Rebase custom branch onto latest tag
+      - name: Rebase and tag
         if: steps.check.outputs.update_needed == 'true'
         run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "7470800+sulring@users.noreply.github.com"
           git checkout custom-keyboard-mappings
           git rebase upstream/main
           git push origin custom-keyboard-mappings --force-with-lease
+          git tag ${{ steps.tags.outputs.latest_tag }}-custom
+          git push origin ${{ steps.tags.outputs.latest_tag }}-custom
+
+  build:
+    needs: sync-and-build
+    if: needs.sync-and-build.outputs.update_needed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.sync-and-build.outputs.latest_tag }}-custom
       
-      - name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
         run: |
-          VERSION=${{ steps.tags.outputs.latest_tag }}
+          VERSION=${{ needs.sync-and-build.outputs.latest_tag }}
           BINARY_NAME=crush-${{ matrix.goos }}-${{ matrix.goarch }}
           
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME=${BINARY_NAME}.exe
           fi
           
-          # Set environment variables for cross-compilation
-          export GOOS=${{ matrix.goos }}
-          export GOARCH=${{ matrix.goarch }}
-          export CGO_ENABLED=0
-          
-          # Build with version info
-          task build
-          mv crush ${BINARY_NAME}
-        env:
-          GOEXPERIMENT: greenteagc
+          go build -ldflags="-X github.com/charmbracelet/crush/internal/version.Version=${VERSION}" -o ${BINARY_NAME} .
       
-      - name: Create release
-        if: matrix.goos == 'linux' && matrix.goarch == 'amd64' && steps.check.outputs.update_needed == 'true'
-        uses: softprops/action-gh-release@v2
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.tags.outputs.latest_tag }}
-          name: ${{ steps.tags.outputs.latest_tag }}
-          body: |
-            Auto-built version of crush with custom keyboard mappings
-            
-            Based on upstream tag: ${{ steps.tags.outputs.latest_tag }}
-            
-            Changes:
-            - Custom keyboard key mappings across components
-            - Rebased on latest upstream changes
-          draft: false
-          prerelease: false
-          files: |
-            crush-*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: crush-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: crush-*
