@@ -1,4 +1,6 @@
 name: Sync and Build with Upstream
+permissions:
+  contents: write
 on:
   schedule:
     - cron: '0 */6 * * *'  # Every 6 hours to catch new tags
@@ -19,10 +21,12 @@ jobs:
     outputs:
       update_needed: ${{ steps.check.outputs.update_needed }}
       latest_tag: ${{ steps.tags.outputs.latest_tag }}
+      target_tag: ${{ steps.target.outputs.target_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: custom-keyboard-mappings
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Add upstream remote
@@ -36,15 +40,9 @@ jobs:
       - name: Get current and latest tags
         id: tags
         run: |
+          # Find latest upstream tag reachable from upstream/main
           LATEST_TAG=$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || echo "v0.0.0")
-          
-          # Remove existing tag if it exists
-          if git rev-parse $LATEST_TAG >/dev/null 2>&1; then
-            echo "Removing existing tag $LATEST_TAG"
-            git tag -d $LATEST_TAG || true
-            git push origin :refs/tags/$LATEST_TAG || true
-          fi
-          
+          # Current tag on this repo (before any deletion)
           CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
@@ -56,7 +54,7 @@ jobs:
           if [ "${{ github.event.inputs.build_current }}" = "true" ]; then
             echo "Manual build requested"
             echo "update_needed=true" >> $GITHUB_OUTPUT
-          elif [ "$CURRENT_TAG" = "${{ steps.tags.outputs.latest_tag }}" ]; then
+          elif [ "${{ steps.tags.outputs.current_tag }}" = "${{ steps.tags.outputs.latest_tag }}" ]; then
             echo "Already have tag for ${{ steps.tags.outputs.latest_tag }}"
             echo "update_needed=false" >> $GITHUB_OUTPUT
           else
@@ -78,12 +76,17 @@ jobs:
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "7470800+sulring@users.noreply.github.com"
+          # Ensure branch is present locally
+          git fetch origin custom-keyboard-mappings:custom-keyboard-mappings || true
           git checkout custom-keyboard-mappings
           # Attempt rebase
           TARGET=${{ steps.target.outputs.target_tag }}
           # Try rebase on tag first, fallback to main if tag doesn't exist
-          if git rev-parse $TARGET >/dev/null 2>&1; then
-            echo "Rebasing onto tag: $TARGET"
+          if git rev-parse upstream/$TARGET >/dev/null 2>&1; then
+            echo "Rebasing onto upstream tag: upstream/$TARGET"
+            git rebase upstream/$TARGET
+          elif git rev-parse $TARGET >/dev/null 2>&1; then
+            echo "Rebasing onto local tag: $TARGET"
             git rebase $TARGET
           else
             echo "Tag $TARGET not found, rebasing onto main"
@@ -91,9 +94,13 @@ jobs:
           fi
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
-          echo "Creating new tag ${{ steps.target.outputs.target_tag }}"
-          git tag ${{ steps.target.outputs.target_tag }}
-          git push origin ${{ steps.target.outputs.target_tag }}
+          echo "Preparing tag $TARGET"
+          # Delete tag on fork if it exists, then recreate on the rebased commit
+          git tag -d "$TARGET" >/dev/null 2>&1 || true
+          git push origin :refs/tags/"$TARGET" || true
+          echo "Creating new tag $TARGET"
+          git tag "$TARGET"
+          git push origin "$TARGET"
 
   build:
     needs: sync-and-build
