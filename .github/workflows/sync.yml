@@ -3,6 +3,15 @@ on:
   schedule:
     - cron: '0 */6 * * *'  # Every 6 hours to catch new tags
   workflow_dispatch:
+    inputs:
+      build_current:
+        description: 'Build current custom version (ignores upstream check)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   sync-and-build:
@@ -36,7 +45,7 @@ jobs:
       - name: Check if update needed
         id: check
         run: |
-          if [ "${{ steps.tags.outputs.current_tag }}" = "${{ steps.tags.outputs.latest_tag }}" ]; then
+          if [ "${{ steps.tags.outputs.current_tag }}" = "${{ steps.tags.outputs.latest_tag }}" ] && [ "${{ github.event.inputs.build_current }}" != "true" ]; then
             echo "update_needed=false" >> $GITHUB_OUTPUT
           else
             echo "update_needed=true" >> $GITHUB_OUTPUT
