@@ -42,12 +42,7 @@ jobs:
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "Current: $CURRENT_TAG, Latest: $LATEST_TAG"
           
-          # Delete existing tag to avoid conflicts
-          if git rev-parse $LATEST_TAG >/dev/null 2>&1; then
-            echo "Deleting existing tag $LATEST_TAG"
-            git tag -d $LATEST_TAG || true
-            git push origin :refs/tags/$LATEST_TAG || true
-          fi
+          # Remove tag deletion logic
       
       - name: Check if update needed
         id: check
@@ -82,9 +77,9 @@ jobs:
           fi
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
-          echo "Creating new tag ${{ steps.target.outputs.target_tag }}"
-          git tag ${{ steps.target.outputs.target_tag }}
-          git push origin ${{ steps.target.outputs.target_tag }}
+          echo "Creating new tag ${{ steps.target.outputs.target_tag }}-x"
+          git tag ${{ steps.target.outputs.target_tag }}-x
+          git push origin ${{ steps.target.outputs.target_tag }}-x
 
   build:
     needs: sync-and-build
@@ -101,7 +96,7 @@ jobs:
       - name: Checkout rebased tag for building
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.sync-and-build.outputs.target_tag }}
+          ref: ${{ needs.sync-and-build.outputs.target_tag }}-x
       
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -142,8 +137,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.sync-and-build.outputs.target_tag }}
-          name: ${{ needs.sync-and-build.outputs.target_tag }} (Custom Keyboard Mappings)
+          tag_name: ${{ needs.sync-and-build.outputs.target_tag }}-x
+          name: ${{ needs.sync-and-build.outputs.target_tag }}-x (Custom Keyboard Mappings)
           body: |
             Auto-built version of crush with custom keyboard mappings
             
