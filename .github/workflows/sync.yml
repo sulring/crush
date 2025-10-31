@@ -75,8 +75,21 @@ jobs:
           fi
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
-          git tag ${{ steps.target.outputs.target_tag }} -f
-          git push origin ${{ steps.target.outputs.target_tag }} -f
+          # Handle tag creation/updating
+          if git rev-parse ${{ steps.target.outputs.target_tag }} >/dev/null 2>&1; then
+            echo "Tag exists, checking if update needed"
+            if [ "$(git rev-parse ${{ steps.target.outputs.target_tag }})" != "$(git rev-parse HEAD)" ]; then
+              echo "Updating existing tag"
+              git tag ${{ steps.target.outputs.target_tag }} -f
+              git push origin ${{ steps.target.outputs.target_tag }} -f
+            else
+              echo "Tag already points to current commit"
+            fi
+          else
+            echo "Creating new tag"
+            git tag ${{ steps.target.outputs.target_tag }}
+            git push origin ${{ steps.target.outputs.target_tag }}
+          fi
 
   build:
     needs: sync-and-build
