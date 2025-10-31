@@ -42,14 +42,26 @@ jobs:
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "Current: $CURRENT_TAG, Latest: $LATEST_TAG"
           
-          # Remove tag deletion logic
+          # Check if we have a custom tag for current version
+          CUSTOM_TAG="${LATEST_TAG}-x"
+          if git rev-parse $CUSTOM_TAG >/dev/null 2>&1; then
+            echo "current_custom_tag=$CUSTOM_TAG" >> $GITHUB_OUTPUT
+          else
+            echo "current_custom_tag=v0.0.0" >> $GITHUB_OUTPUT
+          fi
       
       - name: Check if update needed
         id: check
         run: |
-          if [ "${{ steps.tags.outputs.current_tag }}" = "${{ steps.tags.outputs.latest_tag }}" ] && [ "${{ github.event.inputs.build_current }}" != "true" ]; then
+          CURRENT_CUSTOM="${{ steps.tags.outputs.current_custom_tag }}"
+          if [ "${{ github.event.inputs.build_current }}" = "true" ]; then
+            echo "Manual build requested"
+            echo "update_needed=true" >> $GITHUB_OUTPUT
+          elif [ "$CURRENT_CUSTOM" = "${{ steps.tags.outputs.latest_tag }}-x" ]; then
+            echo "Already have custom tag for ${{ steps.tags.outputs.latest_tag }}"
             echo "update_needed=false" >> $GITHUB_OUTPUT
           else
+            echo "New upstream tag available"
             echo "update_needed=true" >> $GITHUB_OUTPUT
           fi
       
