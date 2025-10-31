@@ -118,6 +118,9 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
+          name: crush-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: crush-*
+
   release:
     needs: [sync-and-build, build]
     if: needs.sync-and-build.outputs.update_needed == 'true'
