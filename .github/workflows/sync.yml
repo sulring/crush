@@ -51,17 +51,26 @@ jobs:
             echo "update_needed=true" >> $GITHUB_OUTPUT
           fi
       
+      - name: Determine target tag
+        id: target
+        run: |
+          if [ "${{ github.event.inputs.build_current }}" = "true" ]; then
+            echo "target_tag=${{ steps.tags.outputs.latest_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "target_tag=${{ steps.tags.outputs.latest_tag }}" >> $GITHUB_OUTPUT
+          fi
+      
       - name: Rebase and create release tag
         if: steps.check.outputs.update_needed == 'true'
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "7470800+sulring@users.noreply.github.com"
           git checkout custom-keyboard-mappings
-          git rebase ${{ steps.tags.outputs.latest_tag }}
+          git rebase ${{ steps.target.outputs.target_tag }}
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
-          git tag ${{ steps.tags.outputs.latest_tag }} -f
-          git push origin ${{ steps.tags.outputs.latest_tag }} -f
+          git tag ${{ steps.target.outputs.target_tag }} -f
+          git push origin ${{ steps.target.outputs.target_tag }} -f
 
   build:
     needs: sync-and-build
@@ -78,7 +87,7 @@ jobs:
       - name: Checkout rebased tag for building
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.sync-and-build.outputs.latest_tag }}
+          ref: ${{ needs.sync-and-build.outputs.target_tag }}
       
       - name: Setup Go
         uses: actions/setup-go@v5
