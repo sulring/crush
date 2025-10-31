@@ -37,13 +37,12 @@ jobs:
         id: tags
         run: |
           LATEST_TAG=$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || echo "v0.0.0")
-          CUSTOM_TAG="${LATEST_TAG}-x"
           
-          # Remove existing custom tag if it exists
-          if git rev-parse $CUSTOM_TAG >/dev/null 2>&1; then
-            echo "Removing existing tag $CUSTOM_TAG"
-            git tag -d $CUSTOM_TAG || true
-            git push origin :refs/tags/$CUSTOM_TAG || true
+          # Remove existing tag if it exists
+          if git rev-parse $LATEST_TAG >/dev/null 2>&1; then
+            echo "Removing existing tag $LATEST_TAG"
+            git tag -d $LATEST_TAG || true
+            git push origin :refs/tags/$LATEST_TAG || true
           fi
           
           CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
@@ -54,12 +53,11 @@ jobs:
       - name: Check if update needed
         id: check
         run: |
-          CURRENT_CUSTOM="${{ steps.tags.outputs.current_custom_tag }}"
           if [ "${{ github.event.inputs.build_current }}" = "true" ]; then
             echo "Manual build requested"
             echo "update_needed=true" >> $GITHUB_OUTPUT
-          elif [ "$CURRENT_CUSTOM" = "${{ steps.tags.outputs.latest_tag }}-x" ]; then
-            echo "Already have custom tag for ${{ steps.tags.outputs.latest_tag }}"
+          elif [ "$CURRENT_TAG" = "${{ steps.tags.outputs.latest_tag }}" ]; then
+            echo "Already have tag for ${{ steps.tags.outputs.latest_tag }}"
             echo "update_needed=false" >> $GITHUB_OUTPUT
           else
             echo "New upstream tag available"
@@ -90,9 +88,9 @@ jobs:
           fi
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
-          echo "Creating new tag ${{ steps.target.outputs.target_tag }}-x"
-          git tag ${{ steps.target.outputs.target_tag }}-x
-          git push origin ${{ steps.target.outputs.target_tag }}-x
+          echo "Creating new tag ${{ steps.target.outputs.target_tag }}"
+          git tag ${{ steps.target.outputs.target_tag }}
+          git push origin ${{ steps.target.outputs.target_tag }}
 
   build:
     needs: sync-and-build
@@ -150,8 +148,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.sync-and-build.outputs.target_tag }}-x
-          name: ${{ needs.sync-and-build.outputs.target_tag }}-x (Custom Keyboard Mappings)
+          tag_name: ${{ needs.sync-and-build.outputs.target_tag }}
+          name: ${{ needs.sync-and-build.outputs.target_tag }} (Custom Keyboard Mappings)
           body: |
             Auto-built version of crush with custom keyboard mappings
             
