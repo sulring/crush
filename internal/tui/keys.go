@@ -25,8 +25,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+g", "more"),
 		),
 		Commands: key.NewBinding(
-			key.WithKeys("ctrl+p"),
-			key.WithHelp("ctrl+p", "commands"),
+			key.WithKeys("ctrl+o"),
+			key.WithHelp("ctrl+o", "commands"),
 		),
 		Suspend: key.NewBinding(
 			key.WithKeys("ctrl+z"),
