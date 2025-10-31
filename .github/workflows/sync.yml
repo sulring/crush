@@ -36,19 +36,20 @@ jobs:
       - name: Get current and latest tags
         id: tags
         run: |
-          CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           LATEST_TAG=$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || echo "v0.0.0")
+          CUSTOM_TAG="${LATEST_TAG}-x"
+          
+          # Remove existing custom tag if it exists
+          if git rev-parse $CUSTOM_TAG >/dev/null 2>&1; then
+            echo "Removing existing tag $CUSTOM_TAG"
+            git tag -d $CUSTOM_TAG || true
+            git push origin :refs/tags/$CUSTOM_TAG || true
+          fi
+          
+          CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "Current: $CURRENT_TAG, Latest: $LATEST_TAG"
-          
-          # Check if we have a custom tag for current version
-          CUSTOM_TAG="${LATEST_TAG}-x"
-          if git rev-parse $CUSTOM_TAG >/dev/null 2>&1; then
-            echo "current_custom_tag=$CUSTOM_TAG" >> $GITHUB_OUTPUT
-          else
-            echo "current_custom_tag=v0.0.0" >> $GITHUB_OUTPUT
-          fi
       
       - name: Check if update needed
         id: check
