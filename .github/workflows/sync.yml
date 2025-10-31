@@ -80,9 +80,9 @@ jobs:
           git config user.email "7470800+sulring@users.noreply.github.com"
           git checkout custom-keyboard-mappings
           # Attempt rebase
-          if ! git rebase ${{ steps.target.outputs.target_tag }}; then
+          if ! git rebase upstream/${{ steps.target.outputs.target_tag }}; then
             echo "Rebase failed - aborting and creating issue"
-            git rebase --abort
+            git rebase --abort || true
             echo "::error::Rebase failed due to merge conflicts. Manual resolution required."
             exit 1
           fi
