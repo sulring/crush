@@ -1,7 +1,6 @@
 name: Sync and Build with Upstream
 permissions:
   contents: write
-  workflows: write
 on:
   schedule:
     - cron: '0 */6 * * *'  # Every 6 hours to catch new tags
@@ -93,6 +92,13 @@ jobs:
             echo "Tag $TARGET not found, rebasing onto main"
             git rebase upstream/main
           fi
+
+          # Remove nightly.yml from all new commits to avoid permission errors
+          # GITHUB_TOKEN cannot update workflow files, so we must scrub them.
+          if [ -f ".github/workflows/nightly.yml" ]; then
+             git filter-branch --force --index-filter 'git rm --cached --ignore-unmatch .github/workflows/nightly.yml' --prune-empty origin/custom-keyboard-mappings..HEAD
+          fi
+
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
           echo "Preparing tag $TARGET"
