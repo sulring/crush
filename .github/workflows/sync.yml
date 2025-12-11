@@ -93,11 +93,7 @@ jobs:
             git rebase upstream/main
           fi
 
-          # Remove nightly.yml from all new commits to avoid permission errors
-          # GITHUB_TOKEN cannot update workflow files, so we must scrub them.
-          if [ -f ".github/workflows/nightly.yml" ]; then
-             git filter-branch --force --index-filter 'git rm --cached --ignore-unmatch .github/workflows/nightly.yml' --prune-empty origin/custom-keyboard-mappings..HEAD
-          fi
+
 
           git push origin custom-keyboard-mappings --force-with-lease
           # Create the SAME tag as upstream for release
