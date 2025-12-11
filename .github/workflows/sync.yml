@@ -26,12 +26,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
-      
-      - name: Install Task
-        uses: arduino/setup-task@v1
-        with:
-          version: latest
+          go-version: '1.25.5'
+          cache-dependency-path: go.sum
+          cache: true
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.goos }}-${{ matrix.goarch }}-v2
       
       - name: Add upstream remote
         run: git remote add upstream https://github.com/charmbracelet/crush.git
@@ -81,8 +79,9 @@ jobs:
           export CGO_ENABLED=0
           
           # Build with version info
-          task build
-          mv crush ${BINARY_NAME}
+          # -buildvcs=false is crucial to prevent debug.ReadBuildInfo from returning a pseudo-version
+          # that would overwrite our explicit -ldflags version.
+          go build -buildvcs=false -ldflags="-X github.com/charmbracelet/crush/internal/version.Version=${VERSION}" -o ${BINARY_NAME} .
         env:
           GOEXPERIMENT: greenteagc
       
