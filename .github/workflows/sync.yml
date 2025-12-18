@@ -27,7 +27,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: custom-keyboard-mappings
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.WORKFLOW_TOKEN }}
       
       - name: Add upstream remote
         run: git remote add upstream https://github.com/charmbracelet/crush.git
