@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       update_needed: ${{ steps.check.outputs.update_needed }}
-      latest_tag: ${{ steps.tags.outputs.latest_tag }}
+      latest_tag: ${{ steps.all_tags.outputs.latest_non_nightly }}
       target_tag: ${{ steps.target.outputs.target_tag }}
     steps:
       - uses: actions/checkout@v4
@@ -37,16 +37,28 @@ jobs:
           git fetch upstream --tags --force
           git fetch upstream main
       
-      - name: Get current and latest tags
+      - name: Get current tag
         id: tags
         run: |
-          # Find latest upstream tag reachable from upstream/main
-          LATEST_TAG=$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || echo "v0.0.0")
           # Current tag on this repo (before any deletion)
           CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-          echo "Current: $CURRENT_TAG, Latest: $LATEST_TAG"
+          echo "Current: $CURRENT_TAG"
+
+      - name: Get all upstream tags
+        id: all_tags
+        run: |
+          # Get all non-nightly tags from upstream and sort by version (newest first)
+          TAGS=$(git tag -l | grep -v "nightly" | sort -Vr || true)
+          if [ -z "$TAGS" ]; then
+            echo "No non-nightly tags found"
+            echo "latest_non_nightly=" >> $GITHUB_OUTPUT
+          else
+            # Get the first (newest) non-nightly tag
+            LATEST_NON_NIGHTLY=$(echo "$TAGS" | head -1)
+            echo "latest_non_nightly=$LATEST_NON_NIGHTLY" >> $GITHUB_OUTPUT
+            echo "Latest non-nightly: $LATEST_NON_NIGHTLY"
+          fi
       
       - name: Check if update needed
         id: check
@@ -54,21 +66,32 @@ jobs:
           if [ "${{ github.event.inputs.build_current }}" = "true" ]; then
             echo "Manual build requested"
             echo "update_needed=true" >> $GITHUB_OUTPUT
-          elif [ "${{ steps.tags.outputs.current_tag }}" = "${{ steps.tags.outputs.latest_tag }}" ]; then
-            echo "Already have tag for ${{ steps.tags.outputs.latest_tag }}"
-            echo "update_needed=false" >> $GITHUB_OUTPUT
           else
-            echo "New upstream tag available"
-            echo "update_needed=true" >> $GITHUB_OUTPUT
+            CURRENT_VERSION=${{ steps.tags.outputs.current_tag }}
+            LATEST_NON_NIGHTLY=${{ steps.all_tags.outputs.latest_non_nightly }}
+
+            # Determine if we need to build
+            if [ "$CURRENT_VERSION" = "v0.0.0" ]; then
+              echo "No builds yet, will build latest stable release"
+              echo "update_needed=true" >> $GITHUB_OUTPUT
+            elif [ "$CURRENT_VERSION" != "$LATEST_NON_NIGHTLY" ]; then
+              echo "New stable release available: $LATEST_NON_NIGHTLY (current: $CURRENT_VERSION)"
+              echo "update_needed=true" >> $GITHUB_OUTPUT
+            else
+              echo "Already up to date"
+              echo "update_needed=false" >> $GITHUB_OUTPUT
+            fi
           fi
       
       - name: Determine target tag
         id: target
         run: |
           if [ "${{ github.event.inputs.build_current }}" = "true" ]; then
-            echo "target_tag=${{ steps.tags.outputs.latest_tag }}" >> $GITHUB_OUTPUT
+            echo "Manual build, using latest stable tag"
+            echo "target_tag=${{ steps.all_tags.outputs.latest_non_nightly }}" >> $GITHUB_OUTPUT
           else
-            echo "target_tag=${{ steps.tags.outputs.latest_tag }}" >> $GITHUB_OUTPUT
+            echo "Building latest stable tag"
+            echo "target_tag=${{ steps.all_tags.outputs.latest_non_nightly }}" >> $GITHUB_OUTPUT
           fi
       
       - name: Rebase and create release tag
@@ -166,9 +189,9 @@ jobs:
           name: ${{ needs.sync-and-build.outputs.target_tag }} (Custom Keyboard Mappings)
           body: |
             Auto-built version of crush with custom keyboard mappings
-            
+
             Based on upstream tag: ${{ needs.sync-and-build.outputs.target_tag }}
-            
+
             Changes:
             - Custom keyboard key mappings across components
             - Rebased on latest upstream changes
