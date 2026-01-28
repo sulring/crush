@@ -8,10 +8,45 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/tree"
 	"github.com/charmbracelet/crush/internal/agent"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/ui/anim"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 )
+
+// getModelInfo returns formatted model and provider info for a model type from config.
+// Falls back to large then small model types if the requested type isn't configured.
+func getModelInfo(sty *styles.Styles, modelType config.SelectedModelType) string {
+	cfg := config.Get()
+	if cfg == nil {
+		return ""
+	}
+
+	// Try the requested model type, then fallback to large, then small.
+	modelCfg, ok := cfg.Models[modelType]
+	if !ok {
+		modelCfg, ok = cfg.Models[config.SelectedModelTypeLarge]
+		if !ok {
+			modelCfg, ok = cfg.Models[config.SelectedModelTypeSmall]
+			if !ok {
+				return ""
+			}
+		}
+	}
+
+	modelName := modelCfg.Model
+	model := cfg.GetModel(modelCfg.Provider, modelCfg.Model)
+	if model != nil {
+		modelName = model.Name
+	}
+
+	providerName := modelCfg.Provider
+	if providerConfig, ok := cfg.Providers.Get(modelCfg.Provider); ok {
+		providerName = providerConfig.Name
+	}
+
+	return sty.Muted.Render("  " + modelName + " via " + providerName)
+}
 
 // -----------------------------------------------------------------------------
 // Agent Tool
@@ -101,7 +136,16 @@ type AgentToolRenderContext struct {
 func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if !opts.ToolCall.Finished && !opts.IsCanceled() && len(r.agent.nestedTools) == 0 {
-		return pendingTool(sty, "Agent", opts.Anim)
+		// Show model info even when pending.
+		modelInfo := getModelInfo(sty, config.SelectedModelTypeResearch)
+		if modelInfo == "" {
+			modelInfo = getModelInfo(sty, config.SelectedModelTypeSmall)
+		}
+		pending := pendingTool(sty, "Agent", opts.Anim)
+		if modelInfo != "" {
+			return lipgloss.JoinVertical(lipgloss.Left, pending, modelInfo)
+		}
+		return pending
 	}
 
 	var params agent.AgentParams
@@ -113,6 +157,12 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	header := toolHeader(sty, opts.Status, "Agent", cappedWidth, opts.Compact)
 	if opts.Compact {
 		return header
+	}
+
+	// Add model indicator - research model (or small as fallback).
+	modelInfo := getModelInfo(sty, config.SelectedModelTypeResearch)
+	if modelInfo == "" {
+		modelInfo = getModelInfo(sty, config.SelectedModelTypeSmall)
 	}
 
 	// Build the task tag and prompt.
@@ -127,6 +177,7 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	header = lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
+		modelInfo,
 		"",
 		lipgloss.JoinHorizontal(
 			lipgloss.Left,
@@ -232,7 +283,13 @@ type agenticFetchParams struct {
 func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if !opts.ToolCall.Finished && !opts.IsCanceled() && len(r.fetch.nestedTools) == 0 {
-		return pendingTool(sty, "Agentic Fetch", opts.Anim)
+		// Show model info even when pending.
+		modelInfo := getModelInfo(sty, config.SelectedModelTypeSmall)
+		pending := pendingTool(sty, "Agentic Fetch", opts.Anim)
+		if modelInfo != "" {
+			return lipgloss.JoinVertical(lipgloss.Left, pending, modelInfo)
+		}
+		return pending
 	}
 
 	var params agenticFetchParams
@@ -252,6 +309,9 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 		return header
 	}
 
+	// Add model indicator - small model.
+	modelInfo := getModelInfo(sty, config.SelectedModelTypeSmall)
+
 	// Build the prompt tag.
 	promptTag := sty.Tool.AgenticFetchPromptTag.Render("Prompt")
 	promptTagWidth := lipgloss.Width(promptTag)
@@ -264,6 +324,7 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 	header = lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
+		modelInfo,
 		"",
 		lipgloss.JoinHorizontal(
 			lipgloss.Left,
