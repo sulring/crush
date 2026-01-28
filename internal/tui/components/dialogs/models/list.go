@@ -117,14 +117,8 @@ func (m *ModelListComponent) SetModelType(modelType int) tea.Cmd {
 
 	cfg := config.Get()
 	var currentModel config.SelectedModel
-	selectedType := config.SelectedModelTypeLarge
-	if m.modelType == LargeModelType {
-		currentModel = cfg.Models[config.SelectedModelTypeLarge]
-		selectedType = config.SelectedModelTypeLarge
-	} else {
-		currentModel = cfg.Models[config.SelectedModelTypeSmall]
-		selectedType = config.SelectedModelTypeSmall
-	}
+	selectedType := ModelTypeToConfig(m.modelType)
+	currentModel = cfg.Models[selectedType]
 	recentItems := cfg.RecentModels[selectedType]
 
 	configuredIcon := t.S().Base.Foreground(t.Success).Render(styles.CheckIcon)

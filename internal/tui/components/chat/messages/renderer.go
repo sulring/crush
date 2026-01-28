@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/ansiext"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/tui/components/chat/todos"
 	"github.com/charmbracelet/crush/internal/tui/components/core"
@@ -660,6 +662,10 @@ func (fr agenticFetchRenderer) Render(v *toolCallCmp) string {
 		return res
 	}
 
+	// Add model information (small model is used for agentic fetch).
+	modelInfo := getSmallModelInfo(t)
+	header = lipgloss.JoinVertical(lipgloss.Left, header, modelInfo)
+
 	taskTag := t.S().Base.Bold(true).Padding(0, 1).MarginLeft(2).Background(t.GreenLight).Foreground(t.Border).Render("Prompt")
 	remainingWidth := v.textWidth() - (lipgloss.Width(taskTag) + 1)
 	remainingWidth = min(remainingWidth, 120-(lipgloss.Width(taskTag)+1))
@@ -914,6 +920,74 @@ func (dr diagnosticsRenderer) Render(v *toolCallCmp) string {
 //  Task renderer
 // -----------------------------------------------------------------------------
 
+// getAgentModelInfo returns formatted model and provider info for agent tools.
+// Falls back through research -> large -> small model types.
+func getAgentModelInfo(t *styles.Theme) string {
+	cfg := config.Get()
+	if cfg == nil {
+		slog.Debug("getAgentModelInfo: config is nil")
+		return ""
+	}
+
+	// Try research model first, then large, then small.
+	modelCfg, ok := cfg.Models[config.SelectedModelTypeResearch]
+	if !ok {
+		modelCfg, ok = cfg.Models[config.SelectedModelTypeLarge]
+		if !ok {
+			modelCfg, ok = cfg.Models[config.SelectedModelTypeSmall]
+			if !ok {
+				slog.Debug("getAgentModelInfo: no models configured")
+				return ""
+			}
+		}
+	}
+
+	modelName := modelCfg.Model
+	model := cfg.GetModel(modelCfg.Provider, modelCfg.Model)
+	if model != nil {
+		modelName = model.Name
+	}
+
+	providerName := modelCfg.Provider
+	if providerConfig, ok := cfg.Providers.Get(modelCfg.Provider); ok {
+		providerName = providerConfig.Name
+	}
+
+	slog.Debug("getAgentModelInfo", "model", modelName, "provider", providerName)
+	return t.S().Muted.Render("  " + modelName + " via " + providerName)
+}
+
+// getSmallModelInfo returns formatted model and provider info for small model tools.
+// Falls back to large model if small is not configured.
+func getSmallModelInfo(t *styles.Theme) string {
+	cfg := config.Get()
+	if cfg == nil {
+		return ""
+	}
+
+	// Try small model first, then large.
+	modelCfg, ok := cfg.Models[config.SelectedModelTypeSmall]
+	if !ok {
+		modelCfg, ok = cfg.Models[config.SelectedModelTypeLarge]
+		if !ok {
+			return ""
+		}
+	}
+
+	modelName := modelCfg.Model
+	model := cfg.GetModel(modelCfg.Provider, modelCfg.Model)
+	if model != nil {
+		modelName = model.Name
+	}
+
+	providerName := modelCfg.Provider
+	if providerConfig, ok := cfg.Providers.Get(modelCfg.Provider); ok {
+		providerName = providerConfig.Name
+	}
+
+	return t.S().Muted.Render("  " + modelName + " via " + providerName)
+}
+
 // agentRenderer handles project-wide diagnostic information
 type agentRenderer struct {
 	baseRenderer
@@ -949,6 +1023,11 @@ func (tr agentRenderer) Render(v *toolCallCmp) string {
 	if res, done := earlyState(header, v); v.cancelled && done {
 		return res
 	}
+
+	// Add model information.
+	modelInfo := getAgentModelInfo(t)
+	header = lipgloss.JoinVertical(lipgloss.Left, header, modelInfo)
+
 	taskTag := t.S().Base.Bold(true).Padding(0, 1).MarginLeft(2).Background(t.BlueLight).Foreground(t.White).Render("Task")
 	remainingWidth := v.textWidth() - lipgloss.Width(header) - lipgloss.Width(taskTag) - 2
 	remainingWidth = min(remainingWidth, 120-lipgloss.Width(taskTag)-2)

@@ -3,6 +3,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/help"
@@ -31,10 +32,65 @@ const (
 const (
 	LargeModelType int = iota
 	SmallModelType
+	VisionModelType
+	ResearchModelType
 
-	largeModelInputPlaceholder = "Choose a model for large, complex tasks"
-	smallModelInputPlaceholder = "Choose a model for small, simple tasks"
+	largeModelInputPlaceholder    = "Choose a model for large, complex tasks"
+	smallModelInputPlaceholder    = "Choose a model for small, simple tasks"
+	visionModelInputPlaceholder   = "Choose a model for image inputs"
+	researchModelInputPlaceholder = "Choose a model for agent research tasks"
 )
+
+// AllModelTypes returns all model types in order for cycling.
+var AllModelTypes = []int{LargeModelType, SmallModelType, VisionModelType, ResearchModelType}
+
+// ModelTypeToConfig converts a model type int to config.SelectedModelType.
+func ModelTypeToConfig(modelType int) config.SelectedModelType {
+	switch modelType {
+	case LargeModelType:
+		return config.SelectedModelTypeLarge
+	case SmallModelType:
+		return config.SelectedModelTypeSmall
+	case VisionModelType:
+		return config.SelectedModelTypeVision
+	case ResearchModelType:
+		return config.SelectedModelTypeResearch
+	default:
+		return config.SelectedModelTypeLarge
+	}
+}
+
+// ModelTypeName returns the display name for a model type.
+func ModelTypeName(modelType int) string {
+	switch modelType {
+	case LargeModelType:
+		return "Large"
+	case SmallModelType:
+		return "Small"
+	case VisionModelType:
+		return "Vision"
+	case ResearchModelType:
+		return "Research"
+	default:
+		return "Unknown"
+	}
+}
+
+// ModelTypePlaceholder returns the input placeholder for a model type.
+func ModelTypePlaceholder(modelType int) string {
+	switch modelType {
+	case LargeModelType:
+		return largeModelInputPlaceholder
+	case SmallModelType:
+		return smallModelInputPlaceholder
+	case VisionModelType:
+		return visionModelInputPlaceholder
+	case ResearchModelType:
+		return researchModelInputPlaceholder
+	default:
+		return largeModelInputPlaceholder
+	}
+}
 
 // ModelSelectedMsg is sent when a model is selected
 type ModelSelectedMsg struct {
@@ -163,10 +219,7 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (util.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			modelType := config.SelectedModelTypeLarge
-			if m.modelList.GetModelType() == SmallModelType {
-				modelType = config.SelectedModelTypeSmall
-			}
+			modelType := ModelTypeToConfig(m.modelList.GetModelType())
 
 			askForApiKey := func() {
 				m.keyMap.isAPIKeyHelp = true
@@ -265,10 +318,17 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (util.Model, tea.Cmd) {
 				u, cmd := m.apiKeyInput.Update(msg)
 				m.apiKeyInput = u.(*APIKeyInput)
 				return m, cmd
-			case m.modelList.GetModelType() == LargeModelType:
-				m.modelList.SetInputPlaceholder(smallModelInputPlaceholder)
-				return m, m.modelList.SetModelType(SmallModelType)
 			default:
+				// Cycle through all model types.
+				currentType := m.modelList.GetModelType()
+				for i, mt := range AllModelTypes {
+					if currentType == mt {
+						nextType := AllModelTypes[(i+1)%len(AllModelTypes)]
+						m.modelList.SetInputPlaceholder(ModelTypePlaceholder(nextType))
+						return m, m.modelList.SetModelType(nextType)
+					}
+				}
+				// Fallback to large if not found.
 				m.modelList.SetInputPlaceholder(largeModelInputPlaceholder)
 				return m, m.modelList.SetModelType(LargeModelType)
 			}
@@ -487,13 +547,20 @@ func (m *modelDialogCmp) ID() dialogs.DialogID {
 
 func (m *modelDialogCmp) modelTypeRadio() string {
 	t := styles.CurrentTheme()
-	choices := []string{"Large Task", "Small Task"}
 	iconSelected := "◉"
 	iconUnselected := "○"
-	if m.modelList.GetModelType() == LargeModelType {
-		return t.S().Base.Foreground(t.FgHalfMuted).Render(iconSelected + " " + choices[0] + "  " + iconUnselected + " " + choices[1])
+	currentType := m.modelList.GetModelType()
+
+	var parts []string
+	for _, mt := range AllModelTypes {
+		icon := iconUnselected
+		if currentType == mt {
+			icon = iconSelected
+		}
+		parts = append(parts, icon+" "+ModelTypeName(mt))
 	}
-	return t.S().Base.Foreground(t.FgHalfMuted).Render(iconUnselected + " " + choices[0] + "  " + iconSelected + " " + choices[1])
+
+	return t.S().Base.Foreground(t.FgHalfMuted).Render(strings.Join(parts, " "))
 }
 
 func (m *modelDialogCmp) isProviderConfigured(providerID string) bool {

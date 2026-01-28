@@ -34,7 +34,8 @@ func (c *coordinator) agentTool(ctx context.Context) (fantasy.AgentTool, error) 
 		return nil, err
 	}
 
-	agent, err := c.buildAgent(ctx, prompt, agentCfg, true)
+	// Use research agent for cost-effective code research tasks.
+	agent, err := c.buildResearchAgent(ctx, prompt, agentCfg)
 	if err != nil {
 		return nil, err
 	}
