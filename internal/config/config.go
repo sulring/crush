@@ -59,8 +59,10 @@ func (s SelectedModelType) String() string {
 }
 
 const (
-	SelectedModelTypeLarge SelectedModelType = "large"
-	SelectedModelTypeSmall SelectedModelType = "small"
+	SelectedModelTypeLarge    SelectedModelType = "large"
+	SelectedModelTypeSmall    SelectedModelType = "small"
+	SelectedModelTypeVision   SelectedModelType = "vision"
+	SelectedModelTypeResearch SelectedModelType = "research"
 )
 
 const (
@@ -111,6 +113,10 @@ type ProviderConfig struct {
 	OAuthToken *oauth.Token `json:"oauth,omitempty" jsonschema:"description=OAuth2 token for authentication with the provider"`
 	// Marks the provider as disabled.
 	Disable bool `json:"disable,omitempty" jsonschema:"description=Whether this provider is disabled,default=false"`
+
+	// Disables thinking/reasoning mode for this provider. Useful for proxies
+	// like llmhub/LiteLLM that don't support interleaved thinking blocks.
+	DisableThinking bool `json:"disable_thinking,omitempty" jsonschema:"description=Disable thinking/reasoning mode for this provider"`
 
 	// Custom system prompt prefix.
 	SystemPromptPrefix string `json:"system_prompt_prefix,omitempty" jsonschema:"description=Custom prefix to add to system prompts for this provider"`
@@ -456,6 +462,26 @@ func (c *Config) SmallModel() *catwalk.Model {
 	model, ok := c.Models[SelectedModelTypeSmall]
 	if !ok {
 		return nil
+	}
+	return c.GetModel(model.Provider, model.Model)
+}
+
+// VisionModel returns the configured vision model for image inputs.
+// Falls back to large model if vision model is not configured.
+func (c *Config) VisionModel() *catwalk.Model {
+	model, ok := c.Models[SelectedModelTypeVision]
+	if !ok {
+		return c.LargeModel()
+	}
+	return c.GetModel(model.Provider, model.Model)
+}
+
+// ResearchModel returns the configured research model for agent research tasks.
+// Falls back to small model if research model is not configured.
+func (c *Config) ResearchModel() *catwalk.Model {
+	model, ok := c.Models[SelectedModelTypeResearch]
+	if !ok {
+		return c.SmallModel()
 	}
 	return c.GetModel(model.Provider, model.Model)
 }

@@ -122,9 +122,25 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 		return nil, err
 	}
 
-	// refresh models before each run
-	if err := c.UpdateModels(ctx); err != nil {
-		return nil, fmt.Errorf("failed to update models: %w", err)
+	// Check if we have image attachments.
+	hasImageAttachments := false
+	for _, att := range attachments {
+		if att.IsImage() {
+			hasImageAttachments = true
+			break
+		}
+	}
+
+	// Use vision model if configured and we have image attachments.
+	if hasImageAttachments {
+		if err := c.updateModelsForVision(ctx); err != nil {
+			return nil, fmt.Errorf("failed to update models for vision: %w", err)
+		}
+	} else {
+		// refresh models before each run
+		if err := c.UpdateModels(ctx); err != nil {
+			return nil, fmt.Errorf("failed to update models: %w", err)
+		}
 	}
 
 	model := c.currentAgent.Model()
@@ -280,7 +296,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.
 		}
 	case anthropic.Name:
 		_, hasThink := mergedOptions["thinking"]
-		if !hasThink && model.ModelCfg.Think {
+		if !hasThink && model.ModelCfg.Think && !providerCfg.DisableThinking {
 			mergedOptions["thinking"] = map[string]any{
 				// TODO: kujtim see if we need to make this dynamic
 				"budget_tokens": 2000,
@@ -364,6 +380,50 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 		largeProviderCfg.SystemPromptPrefix,
 		"",
 		isSubAgent,
+		c.cfg.Options.DisableAutoSummarize,
+		c.permissions.SkipRequests(),
+		c.sessions,
+		c.messages,
+		nil,
+	})
+
+	c.readyWg.Go(func() error {
+		systemPrompt, err := prompt.Build(ctx, large.Model.Provider(), large.Model.Model(), *c.cfg)
+		if err != nil {
+			return err
+		}
+		result.SetSystemPrompt(systemPrompt)
+		return nil
+	})
+
+	c.readyWg.Go(func() error {
+		tools, err := c.buildTools(ctx, agent)
+		if err != nil {
+			return err
+		}
+		result.SetTools(tools)
+		return nil
+	})
+
+	return result, nil
+}
+
+// buildResearchAgent builds an agent that uses the research model (or small model as fallback).
+// This is used for the agent tool to perform code research tasks more cost-effectively.
+func (c *coordinator) buildResearchAgent(ctx context.Context, prompt *prompt.Prompt, agent config.Agent) (SessionAgent, error) {
+	// Use research model for the "large" slot, falling back to small if not configured.
+	large, small, err := c.buildAgentModelsWithTypes(ctx, config.SelectedModelTypeResearch, config.SelectedModelTypeSmall, true)
+	if err != nil {
+		return nil, err
+	}
+
+	largeProviderCfg, _ := c.cfg.Providers.Get(large.ModelCfg.Provider)
+	result := NewSessionAgent(SessionAgentOptions{
+		large,
+		small,
+		largeProviderCfg.SystemPromptPrefix,
+		"",
+		true, // isSubAgent
 		c.cfg.Options.DisableAutoSummarize,
 		c.permissions.SkipRequests(),
 		c.sessions,
@@ -476,13 +536,27 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 
 // TODO: when we support multiple agents we need to change this so that we pass in the agent specific model config
 func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Model, Model, error) {
-	largeModelCfg, ok := c.cfg.Models[config.SelectedModelTypeLarge]
+	return c.buildAgentModelsWithTypes(ctx, config.SelectedModelTypeLarge, config.SelectedModelTypeSmall, isSubAgent)
+}
+
+// buildAgentModelsWithTypes builds agent models using the specified model types.
+// This allows subagents to use different model configurations (e.g., research model for agent tool).
+func (c *coordinator) buildAgentModelsWithTypes(ctx context.Context, largeType, smallType config.SelectedModelType, isSubAgent bool) (Model, Model, error) {
+	largeModelCfg, ok := c.cfg.Models[largeType]
 	if !ok {
-		return Model{}, Model{}, errors.New("large model not selected")
+		// Fall back to the actual large model if the requested type is not configured.
+		largeModelCfg, ok = c.cfg.Models[config.SelectedModelTypeLarge]
+		if !ok {
+			return Model{}, Model{}, errors.New("large model not selected")
+		}
 	}
-	smallModelCfg, ok := c.cfg.Models[config.SelectedModelTypeSmall]
+	smallModelCfg, ok := c.cfg.Models[smallType]
 	if !ok {
-		return Model{}, Model{}, errors.New("small model not selected")
+		// Fall back to the actual small model if the requested type is not configured.
+		smallModelCfg, ok = c.cfg.Models[config.SelectedModelTypeSmall]
+		if !ok {
+			return Model{}, Model{}, errors.New("small model not selected")
+		}
 	}
 
 	largeProviderCfg, ok := c.cfg.Providers.Get(largeModelCfg.Provider)
@@ -770,7 +844,7 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 	}
 
 	// handle special headers for anthropic
-	if providerCfg.Type == anthropic.Name && c.isAnthropicThinking(model) {
+	if providerCfg.Type == anthropic.Name && !providerCfg.DisableThinking && c.isAnthropicThinking(model) {
 		if v, ok := headers["anthropic-beta"]; ok {
 			headers["anthropic-beta"] = v + ",interleaved-thinking-2025-05-14"
 		} else {
@@ -851,6 +925,28 @@ func (c *coordinator) Model() Model {
 func (c *coordinator) UpdateModels(ctx context.Context) error {
 	// build the models again so we make sure we get the latest config
 	large, small, err := c.buildAgentModels(ctx, false)
+	if err != nil {
+		return err
+	}
+	c.currentAgent.SetModels(large, small)
+
+	agentCfg, ok := c.cfg.Agents[config.AgentCoder]
+	if !ok {
+		return errors.New("coder agent not configured")
+	}
+
+	tools, err := c.buildTools(ctx, agentCfg)
+	if err != nil {
+		return err
+	}
+	c.currentAgent.SetTools(tools)
+	return nil
+}
+
+// updateModelsForVision updates the agent models to use vision model for image inputs.
+// If vision model is not configured, falls back to the large model.
+func (c *coordinator) updateModelsForVision(ctx context.Context) error {
+	large, small, err := c.buildAgentModelsWithTypes(ctx, config.SelectedModelTypeVision, config.SelectedModelTypeSmall, false)
 	if err != nil {
 		return err
 	}

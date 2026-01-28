@@ -23,15 +23,24 @@ type ModelType int
 const (
 	ModelTypeLarge ModelType = iota
 	ModelTypeSmall
+	ModelTypeVision
+	ModelTypeResearch
 )
+
+// AllModelTypes returns all model types in order for cycling.
+var AllModelTypes = []ModelType{ModelTypeLarge, ModelTypeSmall, ModelTypeVision, ModelTypeResearch}
 
 // String returns the string representation of the [ModelType].
 func (mt ModelType) String() string {
 	switch mt {
 	case ModelTypeLarge:
-		return "Large Task"
+		return "Large"
 	case ModelTypeSmall:
-		return "Small Task"
+		return "Small"
+	case ModelTypeVision:
+		return "Vision"
+	case ModelTypeResearch:
+		return "Research"
 	default:
 		return "Unknown"
 	}
@@ -44,6 +53,10 @@ func (mt ModelType) Config() config.SelectedModelType {
 		return config.SelectedModelTypeLarge
 	case ModelTypeSmall:
 		return config.SelectedModelTypeSmall
+	case ModelTypeVision:
+		return config.SelectedModelTypeVision
+	case ModelTypeResearch:
+		return config.SelectedModelTypeResearch
 	default:
 		return ""
 	}
@@ -56,6 +69,10 @@ func (mt ModelType) Placeholder() string {
 		return largeModelInputPlaceholder
 	case ModelTypeSmall:
 		return smallModelInputPlaceholder
+	case ModelTypeVision:
+		return visionModelInputPlaceholder
+	case ModelTypeResearch:
+		return researchModelInputPlaceholder
 	default:
 		return ""
 	}
@@ -65,6 +82,8 @@ const (
 	onboardingModelInputPlaceholder = "Find your fave"
 	largeModelInputPlaceholder      = "Choose a model for large, complex tasks"
 	smallModelInputPlaceholder      = "Choose a model for small, simple tasks"
+	visionModelInputPlaceholder     = "Choose a model for image inputs"
+	researchModelInputPlaceholder   = "Choose a model for agent research tasks"
 )
 
 // ModelsID is the identifier for the model selection dialog.
@@ -201,10 +220,12 @@ func (m *Models) HandleMsg(msg tea.Msg) Action {
 			if m.isOnboarding {
 				break
 			}
-			if m.modelType == ModelTypeLarge {
-				m.modelType = ModelTypeSmall
-			} else {
-				m.modelType = ModelTypeLarge
+			// Cycle through all model types.
+			for i, mt := range AllModelTypes {
+				if m.modelType == mt {
+					m.modelType = AllModelTypes[(i+1)%len(AllModelTypes)]
+					break
+				}
 			}
 			if err := m.setProviderItems(); err != nil {
 				return util.ReportError(err)
@@ -232,20 +253,18 @@ func (m *Models) Cursor() *tea.Cursor {
 func (m *Models) modelTypeRadioView() string {
 	t := m.com.Styles
 	textStyle := t.HalfMuted
-	largeRadioStyle := t.RadioOff
-	smallRadioStyle := t.RadioOff
-	if m.modelType == ModelTypeLarge {
-		largeRadioStyle = t.RadioOn
-	} else {
-		smallRadioStyle = t.RadioOn
+
+	var parts []string
+	for _, mt := range AllModelTypes {
+		radioStyle := t.RadioOff
+		if m.modelType == mt {
+			radioStyle = t.RadioOn
+		}
+		radio := radioStyle.Padding(0, 1).Render()
+		parts = append(parts, radio+textStyle.Render(mt.String()))
 	}
 
-	largeRadio := largeRadioStyle.Padding(0, 1).Render()
-	smallRadio := smallRadioStyle.Padding(0, 1).Render()
-
-	return fmt.Sprintf("%s%s  %s%s",
-		largeRadio, textStyle.Render(ModelTypeLarge.String()),
-		smallRadio, textStyle.Render(ModelTypeSmall.String()))
+	return strings.Join(parts, " ")
 }
 
 // Draw implements [Dialog].
