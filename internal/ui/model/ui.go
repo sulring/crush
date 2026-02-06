@@ -213,6 +213,9 @@ type UI struct {
 	// forceCompactMode tracks whether compact mode is forced by user toggle
 	forceCompactMode bool
 
+	// workflowMode tracks the current workflow mode (fast or planning)
+	workflowMode config.WorkflowMode
+
 	// isCompact tracks whether we're currently in compact layout mode (either
 	// by user toggle or auto-switch based on window size)
 	isCompact bool
@@ -309,6 +312,9 @@ func New(com *common.Common) *UI {
 
 	// Initialize compact mode from config
 	ui.forceCompactMode = com.Config().Options.TUI.CompactMode
+
+	// Initialize workflow mode from config
+	ui.workflowMode = com.Config().WorkflowMode()
 
 	// set onboarding state defaults
 	ui.onboarding.yesInitializeSelected = true
@@ -1302,6 +1308,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if cmd := m.togglePillsExpanded(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.ActionToggleWorkflowMode:
+		cmds = append(cmds, m.toggleWorkflowMode())
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionToggleThinking:
 		cmds = append(cmds, func() tea.Msg {
@@ -1553,6 +1561,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			if cmd := m.openSessionsDialog(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			return true
+		case key.Matches(msg, m.keyMap.WorkflowMode):
+			cmds = append(cmds, m.toggleWorkflowMode())
 			return true
 		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
 			m.detailsOpen = !m.detailsOpen
@@ -1898,6 +1909,7 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 		m.isCompact,
 		m.detailsOpen,
 		area.Dx(),
+		m.workflowMode,
 	)
 }
 
@@ -2279,6 +2291,32 @@ func (m *UI) toggleCompactMode() tea.Cmd {
 	m.updateLayoutAndSize()
 
 	return nil
+}
+
+// toggleWorkflowMode toggles between fast and planning workflow modes.
+func (m *UI) toggleWorkflowMode() tea.Cmd {
+	cfg := m.com.Config()
+	if cfg == nil {
+		return util.ReportError(errors.New("configuration not found"))
+	}
+
+	currentMode := cfg.WorkflowMode()
+	var newMode config.WorkflowMode
+	if currentMode == config.WorkflowModeFast {
+		newMode = config.WorkflowModePlanning
+	} else {
+		newMode = config.WorkflowModeFast
+	}
+
+	if err := cfg.SetWorkflowMode(newMode); err != nil {
+		return util.ReportError(err)
+	}
+
+	m.workflowMode = newMode
+
+	return func() tea.Msg {
+		return util.NewInfoMsg("Workflow mode: " + string(newMode))
+	}
 }
 
 // updateLayoutAndSize updates the layout and sizes of UI components.

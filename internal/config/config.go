@@ -197,9 +197,20 @@ type LSPConfig struct {
 	Timeout     int               `json:"timeout,omitempty" jsonschema:"description=Timeout in seconds for LSP server initialization,default=30,example=60,example=120"`
 }
 
+// WorkflowMode represents the agent's workflow mode.
+type WorkflowMode string
+
+const (
+	// WorkflowModeFast is the default autonomous mode - search, act, test, done.
+	WorkflowModeFast WorkflowMode = "fast"
+	// WorkflowModePlanning is a structured mode with planning and approval gates.
+	WorkflowModePlanning WorkflowMode = "planning"
+)
+
 type TUIOptions struct {
-	CompactMode bool   `json:"compact_mode,omitempty" jsonschema:"description=Enable compact mode for the TUI interface,default=false"`
-	DiffMode    string `json:"diff_mode,omitempty" jsonschema:"description=Diff mode for the TUI interface,enum=unified,enum=split"`
+	CompactMode  bool         `json:"compact_mode,omitempty" jsonschema:"description=Enable compact mode for the TUI interface,default=false"`
+	DiffMode     string       `json:"diff_mode,omitempty" jsonschema:"description=Diff mode for the TUI interface,enum=unified,enum=split"`
+	WorkflowMode WorkflowMode `json:"workflow_mode,omitempty" jsonschema:"description=Workflow mode for the agent,enum=fast,enum=planning,default=fast"`
 	// Here we can add themes later or any TUI related options
 	//
 
@@ -479,6 +490,14 @@ func (c *Config) ResearchModel() *catwalk.Model {
 		return c.SmallModel()
 	}
 	return c.GetModel(model.Provider, model.Model)
+}
+
+// WorkflowModeValue returns the current workflow mode, defaulting to fast.
+func (c *Config) WorkflowModeValue() WorkflowMode {
+	if c.Options != nil && c.Options.TUI != nil && c.Options.TUI.WorkflowMode != "" {
+		return c.Options.TUI.WorkflowMode
+	}
+	return WorkflowModeFast
 }
 
 const maxRecentModelsPerType = 5
