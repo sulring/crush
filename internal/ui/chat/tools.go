@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2/tree"
 	"github.com/charmbracelet/crush/internal/agent"
 	"github.com/charmbracelet/crush/internal/agent/tools"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/diff"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/message"
@@ -96,6 +97,7 @@ type ToolRenderOpts struct {
 	Compact         bool
 	IsSpinning      bool
 	Status          ToolStatus
+	Config          *config.Config
 }
 
 // IsPending returns true if the tool call is still pending (not finished and
@@ -209,6 +211,7 @@ func NewToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	cfg *config.Config,
 ) ToolMessageItem {
 	var item ToolMessageItem
 	switch toolCall.Name {
@@ -241,9 +244,9 @@ func NewToolMessageItem(
 	case tools.DiagnosticsToolName:
 		item = NewDiagnosticsToolMessageItem(sty, toolCall, result, canceled)
 	case agent.AgentToolName:
-		item = NewAgentToolMessageItem(sty, toolCall, result, canceled)
+		item = NewAgentToolMessageItem(sty, toolCall, result, canceled, cfg)
 	case tools.AgenticFetchToolName:
-		item = NewAgenticFetchToolMessageItem(sty, toolCall, result, canceled)
+		item = NewAgenticFetchToolMessageItem(sty, toolCall, result, canceled, cfg)
 	case tools.WebFetchToolName:
 		item = NewWebFetchToolMessageItem(sty, toolCall, result, canceled)
 	case tools.WebSearchToolName:
