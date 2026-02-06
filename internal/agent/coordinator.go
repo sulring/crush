@@ -101,8 +101,14 @@ func NewCoordinator(
 		return nil, errors.New("coder agent not configured")
 	}
 
+	// Get workflow mode from config, default to fast.
+	workflowMode := config.WorkflowModeFast
+	if cfg.Options.TUI != nil && cfg.Options.TUI.WorkflowMode != "" {
+		workflowMode = cfg.Options.TUI.WorkflowMode
+	}
+
 	// TODO: make this dynamic when we support multiple agents
-	prompt, err := coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
+	prompt, err := coderPrompt(workflowMode, prompt.WithWorkingDir(c.cfg.WorkingDir()))
 	if err != nil {
 		return nil, err
 	}

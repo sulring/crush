@@ -52,6 +52,7 @@ func (h *header) drawHeader(
 	compact bool,
 	detailsOpen bool,
 	width int,
+	workflowMode config.WorkflowMode,
 ) {
 	t := h.com.Styles
 	if width != h.width || compact != h.compact {
@@ -74,7 +75,7 @@ func (h *header) drawHeader(
 	b.WriteString(h.compactLogo)
 
 	availDetailWidth := width - leftPadding - rightPadding - lipgloss.Width(b.String()) - minHeaderDiags
-	details := renderHeaderDetails(h.com, session, h.com.App.LSPClients, detailsOpen, availDetailWidth)
+	details := renderHeaderDetails(h.com, session, h.com.App.LSPClients, detailsOpen, availDetailWidth, workflowMode)
 
 	remainingWidth := width -
 		lipgloss.Width(b.String()) -
@@ -103,10 +104,18 @@ func renderHeaderDetails(
 	lspClients *csync.Map[string, *lsp.Client],
 	detailsOpen bool,
 	availWidth int,
+	workflowMode config.WorkflowMode,
 ) string {
 	t := com.Styles
 
 	var parts []string
+
+	// Show workflow mode indicator.
+	if workflowMode == config.WorkflowModePlanning {
+		parts = append(parts, t.Header.Keystroke.Render("📋 plan"))
+	} else {
+		parts = append(parts, t.Header.Keystroke.Render("⚡ fast"))
+	}
 
 	errorCount := 0
 	for l := range lspClients.Seq() {

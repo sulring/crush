@@ -203,9 +203,20 @@ type LSPConfig struct {
 	Timeout     int               `json:"timeout,omitempty" jsonschema:"description=Timeout in seconds for LSP server initialization,default=30,example=60,example=120"`
 }
 
+// WorkflowMode represents the agent's workflow mode.
+type WorkflowMode string
+
+const (
+	// WorkflowModeFast is the default autonomous mode - search, act, test, done.
+	WorkflowModeFast WorkflowMode = "fast"
+	// WorkflowModePlanning is a structured mode with planning and approval gates.
+	WorkflowModePlanning WorkflowMode = "planning"
+)
+
 type TUIOptions struct {
-	CompactMode bool   `json:"compact_mode,omitempty" jsonschema:"description=Enable compact mode for the TUI interface,default=false"`
-	DiffMode    string `json:"diff_mode,omitempty" jsonschema:"description=Diff mode for the TUI interface,enum=unified,enum=split"`
+	CompactMode  bool         `json:"compact_mode,omitempty" jsonschema:"description=Enable compact mode for the TUI interface,default=false"`
+	DiffMode     string       `json:"diff_mode,omitempty" jsonschema:"description=Diff mode for the TUI interface,enum=unified,enum=split"`
+	WorkflowMode WorkflowMode `json:"workflow_mode,omitempty" jsonschema:"description=Workflow mode for the agent,enum=fast,enum=planning,default=fast"`
 	// Here we can add themes later or any TUI related options
 	//
 
@@ -490,8 +501,31 @@ func (c *Config) SetCompactMode(enabled bool) error {
 	if c.Options == nil {
 		c.Options = &Options{}
 	}
+	if c.Options.TUI == nil {
+		c.Options.TUI = &TUIOptions{}
+	}
 	c.Options.TUI.CompactMode = enabled
 	return c.SetConfigField("options.tui.compact_mode", enabled)
+}
+
+// SetWorkflowMode sets the workflow mode (fast or planning) and persists it.
+func (c *Config) SetWorkflowMode(mode WorkflowMode) error {
+	if c.Options == nil {
+		c.Options = &Options{}
+	}
+	if c.Options.TUI == nil {
+		c.Options.TUI = &TUIOptions{}
+	}
+	c.Options.TUI.WorkflowMode = mode
+	return c.SetConfigField("options.tui.workflow_mode", string(mode))
+}
+
+// WorkflowMode returns the current workflow mode, defaulting to fast.
+func (c *Config) WorkflowMode() WorkflowMode {
+	if c.Options != nil && c.Options.TUI != nil && c.Options.TUI.WorkflowMode != "" {
+		return c.Options.TUI.WorkflowMode
+	}
+	return WorkflowModeFast
 }
 
 func (c *Config) Resolve(key string) (string, error) {
