@@ -16,8 +16,7 @@ import (
 
 // getModelInfo returns formatted model and provider info for a model type from config.
 // Falls back to large then small model types if the requested type isn't configured.
-func getModelInfo(sty *styles.Styles, modelType config.SelectedModelType) string {
-	cfg := config.Get()
+func getModelInfo(sty *styles.Styles, cfg *config.Config, modelType config.SelectedModelType) string {
 	if cfg == nil {
 		return ""
 	}
@@ -64,6 +63,7 @@ type AgentToolMessageItem struct {
 	*baseToolMessageItem
 
 	nestedTools []ToolMessageItem
+	cfg         *config.Config
 }
 
 var (
@@ -77,8 +77,9 @@ func NewAgentToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	cfg *config.Config,
 ) *AgentToolMessageItem {
-	t := &AgentToolMessageItem{}
+	t := &AgentToolMessageItem{cfg: cfg}
 	t.baseToolMessageItem = newBaseToolMessageItem(sty, toolCall, result, &AgentToolRenderContext{agent: t}, canceled)
 	// For the agent tool we keep spinning until the tool call is finished.
 	t.spinningFunc = func(state SpinningState) bool {
@@ -137,9 +138,9 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	cappedWidth := cappedMessageWidth(width)
 	if !opts.ToolCall.Finished && !opts.IsCanceled() && len(r.agent.nestedTools) == 0 {
 		// Show model info even when pending.
-		modelInfo := getModelInfo(sty, config.SelectedModelTypeResearch)
+		modelInfo := getModelInfo(sty, r.agent.cfg, config.SelectedModelTypeResearch)
 		if modelInfo == "" {
-			modelInfo = getModelInfo(sty, config.SelectedModelTypeSmall)
+			modelInfo = getModelInfo(sty, r.agent.cfg, config.SelectedModelTypeSmall)
 		}
 		pending := pendingTool(sty, "Agent", opts.Anim)
 		if modelInfo != "" {
@@ -160,9 +161,9 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	}
 
 	// Add model indicator - research model (or small as fallback).
-	modelInfo := getModelInfo(sty, config.SelectedModelTypeResearch)
+	modelInfo := getModelInfo(sty, r.agent.cfg, config.SelectedModelTypeResearch)
 	if modelInfo == "" {
-		modelInfo = getModelInfo(sty, config.SelectedModelTypeSmall)
+		modelInfo = getModelInfo(sty, r.agent.cfg, config.SelectedModelTypeSmall)
 	}
 
 	// Build the task tag and prompt.
@@ -224,6 +225,7 @@ type AgenticFetchToolMessageItem struct {
 	*baseToolMessageItem
 
 	nestedTools []ToolMessageItem
+	cfg         *config.Config
 }
 
 var (
@@ -237,8 +239,9 @@ func NewAgenticFetchToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	cfg *config.Config,
 ) *AgenticFetchToolMessageItem {
-	t := &AgenticFetchToolMessageItem{}
+	t := &AgenticFetchToolMessageItem{cfg: cfg}
 	t.baseToolMessageItem = newBaseToolMessageItem(sty, toolCall, result, &AgenticFetchToolRenderContext{fetch: t}, canceled)
 	// For the agentic fetch tool we keep spinning until the tool call is finished.
 	t.spinningFunc = func(state SpinningState) bool {
@@ -284,7 +287,7 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 	cappedWidth := cappedMessageWidth(width)
 	if !opts.ToolCall.Finished && !opts.IsCanceled() && len(r.fetch.nestedTools) == 0 {
 		// Show model info even when pending.
-		modelInfo := getModelInfo(sty, config.SelectedModelTypeSmall)
+		modelInfo := getModelInfo(sty, r.fetch.cfg, config.SelectedModelTypeSmall)
 		pending := pendingTool(sty, "Agentic Fetch", opts.Anim)
 		if modelInfo != "" {
 			return lipgloss.JoinVertical(lipgloss.Left, pending, modelInfo)
@@ -310,7 +313,7 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 	}
 
 	// Add model indicator - small model.
-	modelInfo := getModelInfo(sty, config.SelectedModelTypeSmall)
+	modelInfo := getModelInfo(sty, r.fetch.cfg, config.SelectedModelTypeSmall)
 
 	// Build the prompt tag.
 	promptTag := sty.Tool.AgenticFetchPromptTag.Render("Prompt")
