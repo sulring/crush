@@ -151,6 +151,18 @@ func (s *ConfigStore) SetCompactMode(scope Scope, enabled bool) error {
 	return s.SetConfigField(scope, "options.tui.compact_mode", enabled)
 }
 
+// SetWorkflowMode sets the workflow mode (fast or planning) and persists it.
+func (s *ConfigStore) SetWorkflowMode(scope Scope, mode WorkflowMode) error {
+	if s.config.Options == nil {
+		s.config.Options = &Options{}
+	}
+	if s.config.Options.TUI == nil {
+		s.config.Options.TUI = &TUIOptions{}
+	}
+	s.config.Options.TUI.WorkflowMode = mode
+	return s.SetConfigField(scope, "options.tui.workflow_mode", string(mode))
+}
+
 // SetProviderAPIKey sets the API key for a provider and persists it.
 func (s *ConfigStore) SetProviderAPIKey(scope Scope, providerID string, apiKey any) error {
 	var providerConfig ProviderConfig

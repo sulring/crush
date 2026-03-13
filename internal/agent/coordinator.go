@@ -118,10 +118,7 @@ func NewCoordinator(
 	}
 
 	// Get workflow mode from config, default to fast.
-	workflowMode := config.WorkflowModeFast
-	if cfg.Options.TUI != nil && cfg.Options.TUI.WorkflowMode != "" {
-		workflowMode = cfg.Options.TUI.WorkflowMode
-	}
+	workflowMode := cfg.Config().WorkflowMode()
 
 	// TODO: make this dynamic when we support multiple agents
 	prompt, err := coderPrompt(workflowMode, prompt.WithWorkingDir(c.cfg.WorkingDir()))
@@ -450,22 +447,23 @@ func (c *coordinator) buildResearchAgent(ctx context.Context, prompt *prompt.Pro
 		return nil, err
 	}
 
-	largeProviderCfg, _ := c.cfg.Providers.Get(large.ModelCfg.Provider)
+	largeProviderCfg, _ := c.cfg.Config().Providers.Get(large.ModelCfg.Provider)
 	result := NewSessionAgent(SessionAgentOptions{
-		large,
-		small,
-		largeProviderCfg.SystemPromptPrefix,
-		"",
-		true, // isSubAgent
-		c.cfg.Options.DisableAutoSummarize,
-		c.permissions.SkipRequests(),
-		c.sessions,
-		c.messages,
-		nil,
+		LargeModel:           large,
+		SmallModel:           small,
+		SystemPromptPrefix:   largeProviderCfg.SystemPromptPrefix,
+		SystemPrompt:         "",
+		IsSubAgent:           true,
+		DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
+		IsYolo:               c.permissions.SkipRequests(),
+		Sessions:             c.sessions,
+		Messages:             c.messages,
+		Tools:                nil,
+		Notify:               c.notify,
 	})
 
 	c.readyWg.Go(func() error {
-		systemPrompt, err := prompt.Build(ctx, large.Model.Provider(), large.Model.Model(), *c.cfg)
+		systemPrompt, err := prompt.Build(ctx, large.Model.Provider(), large.Model.Model(), c.cfg)
 		if err != nil {
 			return err
 		}
@@ -987,7 +985,7 @@ func (c *coordinator) updateModelsForVision(ctx context.Context) error {
 	}
 	c.currentAgent.SetModels(large, small)
 
-	agentCfg, ok := c.cfg.Agents[config.AgentCoder]
+	agentCfg, ok := c.cfg.Config().Agents[config.AgentCoder]
 	if !ok {
 		return errors.New("coder agent not configured")
 	}

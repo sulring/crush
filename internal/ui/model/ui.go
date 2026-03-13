@@ -2308,7 +2308,7 @@ func (m *UI) toggleWorkflowMode() tea.Cmd {
 		newMode = config.WorkflowModeFast
 	}
 
-	if err := cfg.SetWorkflowMode(newMode); err != nil {
+	if err := m.com.Store().SetWorkflowMode(config.ScopeGlobal, newMode); err != nil {
 		return util.ReportError(err)
 	}
 

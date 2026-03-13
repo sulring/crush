@@ -492,8 +492,8 @@ func (c *Config) ResearchModel() *catwalk.Model {
 	return c.GetModel(model.Provider, model.Model)
 }
 
-// WorkflowModeValue returns the current workflow mode, defaulting to fast.
-func (c *Config) WorkflowModeValue() WorkflowMode {
+// WorkflowMode returns the current workflow mode, defaulting to fast.
+func (c *Config) WorkflowMode() WorkflowMode {
 	if c.Options != nil && c.Options.TUI != nil && c.Options.TUI.WorkflowMode != "" {
 		return c.Options.TUI.WorkflowMode
 	}
