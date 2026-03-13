@@ -291,7 +291,8 @@ After significant changes:
 - Read files before editing
 - Always use absolute paths for file operations (editing, reading, writing)
 - Use Agent tool for complex searches
-- Run tools in parallel when safe (no dependencies)
+- **NEVER run multiple Agent tool calls concurrently**. Always run ONE agent at a time - wait for the current agent to finish before launching the next one. If you need multiple agents, call them sequentially, not in parallel.
+- Run tools in parallel when safe (no dependencies between them), EXCEPT for Agent tools which must always be sequential
 - When making multiple independent bash calls, send them in a single message with multiple tool calls for parallel execution
 - Summarize tool output for user (they don't see it)
 - Never use `curl` through the bash tool it is not allowed use the fetch tool instead.
